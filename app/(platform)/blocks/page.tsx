@@ -535,10 +535,36 @@ export default function BlockManagementPage() {
               Create your first trading block to start analyzing your performance.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
-              <Button onClick={handleNewBlock}>
-                <Plus className="w-4 h-4 mr-2" />
-                Create First Block
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create First Block
+                    <ChevronDown className="w-3 h-3 ml-1 opacity-50" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="center" className="w-64">
+                  <DropdownMenuItem onClick={handleNewBlock}>
+                    <Activity className="w-4 h-4 mr-2" />
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium">Trade-Based Block</span>
+                      <span className="text-xs text-muted-foreground">
+                        Upload Option Omega trade logs
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleNewEquityCurveBlock}>
+                    <FileSpreadsheet className="w-4 h-4 mr-2" />
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium">Equity Curve Block</span>
+                      <span className="text-xs text-muted-foreground">
+                        Upload generic equity curve CSV
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline">
