@@ -41,6 +41,11 @@ const navData = {
       icon: IconLayoutDashboard,
     },
     {
+      title: "Equity Curve Stats",
+      href: "/equity-curve-stats",
+      icon: IconLayoutDashboard,
+    },
+    {
       title: "Performance Blocks",
       href: "/performance-blocks",
       icon: IconReportAnalytics,

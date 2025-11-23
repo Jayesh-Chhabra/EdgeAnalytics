@@ -20,6 +20,10 @@ const routeMeta: Record<
     title: "Block Stats & Analytics",
     description: "Measure the health of your active trading block at a glance.",
   },
+  "/equity-curve-stats": {
+    title: "Equity Curve Stats",
+    description: "Performance metrics calculated from daily equity curve data.",
+  },
   "/performance-blocks": {
     title: "Performance Blocks",
     description: "Equity curves, streaks, and drawdown coverage across time.",
