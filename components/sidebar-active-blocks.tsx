@@ -15,7 +15,7 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
 } from "@/components/ui/sidebar";
-import { type Block } from "@/lib/stores/block-store";
+import { type Block, isTradeBasedBlock, isEquityCurveBlock } from "@/lib/stores/block-store";
 
 export function SidebarActiveBlocks({ activeBlock }: { activeBlock: Block }) {
   const [isSwitchDialogOpen, setIsSwitchDialogOpen] = useState(false);
@@ -51,37 +51,56 @@ export function SidebarActiveBlocks({ activeBlock }: { activeBlock: Block }) {
           </div>
 
           <dl className="mt-3 space-y-2 text-xs text-muted-foreground">
-            <div className="flex items-center justify-between gap-3 rounded-lg bg-background/50 px-2 py-1">
-              <dt className="flex items-center gap-2 font-medium text-foreground">
-                <IconFileSpreadsheet className="size-3.5" />
-                Trade Log
-              </dt>
-              <dd className="flex flex-col items-end text-right text-[0.7rem]">
-                <span className="max-w-[140px] truncate text-xs">
-                  {activeBlock.tradeLog.fileName}
-                </span>
-                <span className="text-muted-foreground uppercase tracking-wide">
-                  {activeBlock.tradeLog.rowCount} rows
-                </span>
-              </dd>
-            </div>
+            {isTradeBasedBlock(activeBlock) ? (
+              <>
+                <div className="flex items-center justify-between gap-3 rounded-lg bg-background/50 px-2 py-1">
+                  <dt className="flex items-center gap-2 font-medium text-foreground">
+                    <IconFileSpreadsheet className="size-3.5" />
+                    Trade Log
+                  </dt>
+                  <dd className="flex flex-col items-end text-right text-[0.7rem]">
+                    <span className="max-w-[140px] truncate text-xs">
+                      {activeBlock.tradeLog.fileName}
+                    </span>
+                    <span className="text-muted-foreground uppercase tracking-wide">
+                      {activeBlock.tradeLog.rowCount} rows
+                    </span>
+                  </dd>
+                </div>
 
-            {activeBlock.dailyLog && (
+                {activeBlock.dailyLog && (
+                  <div className="flex items-center justify-between gap-3 rounded-lg bg-background/50 px-2 py-1">
+                    <dt className="flex items-center gap-2 font-medium text-foreground">
+                      <IconFileSpreadsheet className="size-3.5" />
+                      Daily Log
+                    </dt>
+                    <dd className="flex flex-col items-end text-right text-[0.7rem]">
+                      <span className="max-w-[140px] truncate text-xs">
+                        {activeBlock.dailyLog.fileName}
+                      </span>
+                      <span className="text-muted-foreground uppercase tracking-wide">
+                        {activeBlock.dailyLog.rowCount} rows
+                      </span>
+                    </dd>
+                  </div>
+                )}
+              </>
+            ) : isEquityCurveBlock(activeBlock) ? (
               <div className="flex items-center justify-between gap-3 rounded-lg bg-background/50 px-2 py-1">
                 <dt className="flex items-center gap-2 font-medium text-foreground">
                   <IconFileSpreadsheet className="size-3.5" />
-                  Daily Log
+                  Equity Curves
                 </dt>
                 <dd className="flex flex-col items-end text-right text-[0.7rem]">
                   <span className="max-w-[140px] truncate text-xs">
-                    {activeBlock.dailyLog.fileName}
+                    {activeBlock.equityCurves.length} {activeBlock.equityCurves.length === 1 ? 'strategy' : 'strategies'}
                   </span>
                   <span className="text-muted-foreground uppercase tracking-wide">
-                    {activeBlock.dailyLog.rowCount} rows
+                    {activeBlock.stats.totalEntries} entries
                   </span>
                 </dd>
               </div>
-            )}
+            ) : null}
           </dl>
 
           <div className="mt-3 flex items-center justify-between text-[0.65rem] text-muted-foreground">

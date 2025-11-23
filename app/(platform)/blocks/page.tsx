@@ -360,6 +360,12 @@ export default function BlockManagementPage() {
   };
 
   const handleEditBlock = (block: Block) => {
+    // Only allow editing trade-based blocks for now
+    if (isEquityCurveBlock(block)) {
+      toast.error("Editing equity curve blocks is not yet supported");
+      return;
+    }
+
     setDialogMode("edit");
     setSelectedBlock(block);
     setIsBlockDialogOpen(true);
