@@ -1,6 +1,7 @@
 "use client";
 
 import { BlockDialog } from "@/components/block-dialog";
+import { EquityCurveUploadDialog } from "@/components/equity-curve-upload-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,10 +10,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useBlockStore, type Block } from "@/lib/stores/block-store";
-import { Activity, Calendar, ChevronDown, Download, Grid3X3, Info, List, Plus, Search, RotateCcw } from "lucide-react";
+import { useBlockStore, type Block, isTradeBasedBlock, isEquityCurveBlock } from "@/lib/stores/block-store";
+import { Activity, Calendar, ChevronDown, Download, FileSpreadsheet, Grid3X3, Info, List, Plus, Search, RotateCcw, TrendingUp } from "lucide-react";
 import React, { useState } from "react";
 
 function BlockCard({
@@ -63,9 +65,22 @@ function BlockCard({
       <CardHeader>
         <div className="flex items-start justify-between">
           <div className="flex-1">
-            <CardTitle className="text-lg font-semibold leading-tight">
-              {block.name}
-            </CardTitle>
+            <div className="flex items-center gap-2 mb-1">
+              <CardTitle className="text-lg font-semibold leading-tight">
+                {block.name}
+              </CardTitle>
+              {isTradeBasedBlock(block) ? (
+                <Badge variant="outline" className="text-xs border-cyan-500 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400">
+                  <Activity className="w-3 h-3 mr-1" />
+                  Trade-Based
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-xs border-purple-500 bg-purple-500/10 text-purple-700 dark:text-purple-400">
+                  <TrendingUp className="w-3 h-3 mr-1" />
+                  Equity Curve
+                </Badge>
+              )}
+            </div>
             {block.description && (
               <p className="text-sm text-muted-foreground mt-1">
                 {block.description}
@@ -78,21 +93,43 @@ function BlockCard({
       <CardContent className="space-y-4">
         {/* File Indicators */}
         <div className="flex flex-wrap gap-2">
-          <Badge variant="secondary" className="text-xs whitespace-nowrap">
-            <Activity className="w-3 h-3 mr-1" />
-            Trade Log ({block.tradeLog.rowCount})
-          </Badge>
-          {block.dailyLog && (
-            <Badge variant="outline" className="text-xs whitespace-nowrap">
-              <Calendar className="w-3 h-3 mr-1" />
-              Daily Log ({block.dailyLog.rowCount})
-            </Badge>
+          {isTradeBasedBlock(block) && (
+            <>
+              <Badge variant="secondary" className="text-xs whitespace-nowrap">
+                <Activity className="w-3 h-3 mr-1" />
+                Trade Log ({block.tradeLog.rowCount})
+              </Badge>
+              {block.dailyLog && (
+                <Badge variant="outline" className="text-xs whitespace-nowrap">
+                  <Calendar className="w-3 h-3 mr-1" />
+                  Daily Log ({block.dailyLog.rowCount})
+                </Badge>
+              )}
+              {block.reportingLog && (
+                <Badge variant="outline" className="text-xs whitespace-nowrap">
+                  <List className="w-3 h-3 mr-1" />
+                  Reporting Log ({block.reportingLog.rowCount})
+                </Badge>
+              )}
+            </>
           )}
-          {block.reportingLog && (
-            <Badge variant="outline" className="text-xs whitespace-nowrap">
-              <List className="w-3 h-3 mr-1" />
-              Reporting Log ({block.reportingLog.rowCount})
-            </Badge>
+          {isEquityCurveBlock(block) && (
+            <>
+              <Badge variant="secondary" className="text-xs whitespace-nowrap">
+                <FileSpreadsheet className="w-3 h-3 mr-1" />
+                {block.stats.totalStrategies} {block.stats.totalStrategies === 1 ? 'Strategy' : 'Strategies'}
+              </Badge>
+              <Badge variant="outline" className="text-xs whitespace-nowrap">
+                <TrendingUp className="w-3 h-3 mr-1" />
+                {block.stats.totalEntries} Entries
+              </Badge>
+              {block.stats.dateRange && (
+                <Badge variant="outline" className="text-xs whitespace-nowrap">
+                  <Calendar className="w-3 h-3 mr-1" />
+                  {formatDate(block.stats.dateRange.start)} - {formatDate(block.stats.dateRange.end)}
+                </Badge>
+              )}
+            </>
           )}
         </div>
 
@@ -184,6 +221,17 @@ function BlockRow({
           {block.isActive && (
             <Badge variant="default" className="text-xs">ACTIVE</Badge>
           )}
+          {isTradeBasedBlock(block) ? (
+            <Badge variant="outline" className="text-xs border-cyan-500 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400">
+              <Activity className="w-3 h-3 mr-1" />
+              Trade-Based
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-xs border-purple-500 bg-purple-500/10 text-purple-700 dark:text-purple-400">
+              <TrendingUp className="w-3 h-3 mr-1" />
+              Equity Curve
+            </Badge>
+          )}
         </div>
         {block.description && (
           <p className="text-sm text-muted-foreground truncate mt-0.5">
@@ -194,21 +242,37 @@ function BlockRow({
 
       {/* File Indicators */}
       <div className="hidden md:flex items-center gap-2">
-        <Badge variant="secondary" className="text-xs whitespace-nowrap">
-          <Activity className="w-3 h-3 mr-1" />
-          {block.tradeLog.rowCount}
-        </Badge>
-        {block.dailyLog && (
-          <Badge variant="outline" className="text-xs whitespace-nowrap">
-            <Calendar className="w-3 h-3 mr-1" />
-            {block.dailyLog.rowCount}
-          </Badge>
+        {isTradeBasedBlock(block) && (
+          <>
+            <Badge variant="secondary" className="text-xs whitespace-nowrap">
+              <Activity className="w-3 h-3 mr-1" />
+              {block.tradeLog.rowCount}
+            </Badge>
+            {block.dailyLog && (
+              <Badge variant="outline" className="text-xs whitespace-nowrap">
+                <Calendar className="w-3 h-3 mr-1" />
+                {block.dailyLog.rowCount}
+              </Badge>
+            )}
+            {block.reportingLog && (
+              <Badge variant="outline" className="text-xs whitespace-nowrap">
+                <List className="w-3 h-3 mr-1" />
+                {block.reportingLog.rowCount}
+              </Badge>
+            )}
+          </>
         )}
-        {block.reportingLog && (
-          <Badge variant="outline" className="text-xs whitespace-nowrap">
-            <List className="w-3 h-3 mr-1" />
-            {block.reportingLog.rowCount}
-          </Badge>
+        {isEquityCurveBlock(block) && (
+          <>
+            <Badge variant="secondary" className="text-xs whitespace-nowrap">
+              <FileSpreadsheet className="w-3 h-3 mr-1" />
+              {block.stats.totalStrategies} {block.stats.totalStrategies === 1 ? 'Strategy' : 'Strategies'}
+            </Badge>
+            <Badge variant="outline" className="text-xs whitespace-nowrap">
+              <TrendingUp className="w-3 h-3 mr-1" />
+              {block.stats.totalEntries} Entries
+            </Badge>
+          </>
         )}
       </div>
 
@@ -262,6 +326,7 @@ export default function BlockManagementPage() {
   const error = useBlockStore(state => state.error);
   const loadBlocks = useBlockStore(state => state.loadBlocks);
   const [isBlockDialogOpen, setIsBlockDialogOpen] = useState(false);
+  const [isEquityCurveDialogOpen, setIsEquityCurveDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"new" | "edit">("new");
   const [selectedBlock, setSelectedBlock] = useState<Block | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -283,6 +348,15 @@ export default function BlockManagementPage() {
     setDialogMode("new");
     setSelectedBlock(null);
     setIsBlockDialogOpen(true);
+  };
+
+  const handleNewEquityCurveBlock = () => {
+    setIsEquityCurveDialogOpen(true);
+  };
+
+  const handleEquityCurveSuccess = (blockId: string) => {
+    // Reload blocks to show the new generic block
+    loadBlocks();
   };
 
   const handleEditBlock = (block: Block) => {
@@ -363,10 +437,36 @@ export default function BlockManagementPage() {
           >
             <List className="w-4 h-4" />
           </Button>
-          <Button onClick={handleNewBlock}>
-            <Plus className="w-4 h-4 mr-2" />
-            New Block
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button>
+                <Plus className="w-4 h-4 mr-2" />
+                New Block
+                <ChevronDown className="w-3 h-3 ml-1 opacity-50" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem onClick={handleNewBlock}>
+                <Activity className="w-4 h-4 mr-2" />
+                <div className="flex flex-col gap-1">
+                  <span className="font-medium">Trade-Based Block</span>
+                  <span className="text-xs text-muted-foreground">
+                    Upload Option Omega trade logs
+                  </span>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleNewEquityCurveBlock}>
+                <FileSpreadsheet className="w-4 h-4 mr-2" />
+                <div className="flex flex-col gap-1">
+                  <span className="font-medium">Equity Curve Block</span>
+                  <span className="text-xs text-muted-foreground">
+                    Upload generic equity curve CSV
+                  </span>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -502,6 +602,12 @@ export default function BlockManagementPage() {
         onOpenChange={setIsBlockDialogOpen}
         mode={dialogMode}
         block={selectedBlock}
+      />
+
+      <EquityCurveUploadDialog
+        open={isEquityCurveDialogOpen}
+        onOpenChange={setIsEquityCurveDialogOpen}
+        onSuccess={handleEquityCurveSuccess}
       />
     </div>
   );
