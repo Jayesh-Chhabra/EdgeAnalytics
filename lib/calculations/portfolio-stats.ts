@@ -18,6 +18,7 @@
 import { std, mean, min, max } from 'mathjs'
 import { Trade } from '../models/trade'
 import { DailyLogEntry } from '../models/daily-log'
+import { EquityCurveEntry } from '../models/equity-curve'
 import { PortfolioStats, StrategyStats, AnalysisConfig } from '../models/portfolio-stats'
 
 /**
@@ -215,6 +216,184 @@ export class PortfolioStatsCalculator {
     })
 
     return strategyStats
+  }
+
+  /**
+   * Calculate portfolio statistics from equity curve data
+   * This is used for blocks that only have equity curve data without trade-level detail
+   */
+  calculateFromEquityCurve(entries: EquityCurveEntry[]): PortfolioStats {
+    if (entries.length === 0) {
+      return this.getEmptyStats()
+    }
+
+    // Sort entries by date
+    const sortedEntries = [...entries].sort((a, b) =>
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    )
+
+    // Calculate initial capital from first entry
+    // Since dailyReturnPct is the return for that day, we need to work backwards
+    const firstEntry = sortedEntries[0]
+    const initialCapital = firstEntry.accountValue / (1 + firstEntry.dailyReturnPct)
+
+    // Calculate day-based statistics
+    const profitableDays = sortedEntries.filter(e => e.dailyReturnPct > 0)
+    const losingDays = sortedEntries.filter(e => e.dailyReturnPct < 0)
+    const breakEvenDays = sortedEntries.filter(e => e.dailyReturnPct === 0)
+
+    const totalDays = sortedEntries.length
+    const winRate = profitableDays.length / totalDays
+
+    // Calculate average win/loss (in dollar terms)
+    const avgWin = profitableDays.length > 0
+      ? mean(profitableDays.map(e => e.accountValue * e.dailyReturnPct)) as number
+      : 0
+    const avgLoss = losingDays.length > 0
+      ? mean(losingDays.map(e => e.accountValue * e.dailyReturnPct)) as number
+      : 0
+
+    // Calculate max win/loss (in dollar terms)
+    const dailyPnLs = sortedEntries.map(e => e.accountValue * e.dailyReturnPct)
+    const maxWin = profitableDays.length > 0
+      ? max(profitableDays.map(e => e.accountValue * e.dailyReturnPct)) as number
+      : 0
+    const maxLoss = losingDays.length > 0
+      ? min(losingDays.map(e => e.accountValue * e.dailyReturnPct)) as number
+      : 0
+
+    // Calculate total P/L and net P/L (no commissions in equity curve data)
+    const finalAccountValue = sortedEntries[sortedEntries.length - 1].accountValue
+    const totalPl = finalAccountValue - initialCapital
+    const totalReturn = (finalAccountValue - initialCapital) / initialCapital
+
+    // Profit factor (sum of profitable days / sum of losing days)
+    const grossProfit = profitableDays.reduce((sum, e) => sum + (e.accountValue * e.dailyReturnPct), 0)
+    const grossLoss = Math.abs(losingDays.reduce((sum, e) => sum + (e.accountValue * e.dailyReturnPct), 0))
+    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? Infinity : 0
+
+    // Calculate daily returns for risk metrics
+    const dailyReturns = sortedEntries.map(e => e.dailyReturnPct)
+
+    // Average daily P/L
+    const avgDailyPl = totalPl / totalDays
+
+    // Sharpe Ratio: (mean return - risk free rate) / std dev of returns
+    // Using sample standard deviation (N-1) to match trade-based calculation
+    const meanDailyReturn = mean(dailyReturns) as number
+    const dailyRiskFreeRate = this.config.riskFreeRate / 100 / this.config.annualizationFactor
+    const excessReturns = dailyReturns.map(r => r - dailyRiskFreeRate)
+
+    const sharpeRatio = excessReturns.length > 1
+      ? (mean(excessReturns) as number) / (std(excessReturns, 'uncorrected') as number) * Math.sqrt(this.config.annualizationFactor)
+      : undefined
+
+    // Sortino Ratio: Uses downside deviation only
+    // Using population std (N) to match numpy for downside deviation
+    const downsideReturns = dailyReturns.filter(r => r < dailyRiskFreeRate).map(r => r - dailyRiskFreeRate)
+    const sortinoRatio = downsideReturns.length > 0
+      ? (meanDailyReturn - dailyRiskFreeRate) / (std(downsideReturns, 'biased') as number) * Math.sqrt(this.config.annualizationFactor)
+      : undefined
+
+    // Max Drawdown calculation
+    let peak = initialCapital
+    let maxDrawdown = 0
+    for (const entry of sortedEntries) {
+      if (entry.accountValue > peak) {
+        peak = entry.accountValue
+      }
+      const drawdown = ((entry.accountValue - peak) / peak) * 100
+      maxDrawdown = Math.min(maxDrawdown, drawdown) // More negative = larger drawdown
+    }
+    maxDrawdown = Math.abs(maxDrawdown) // Convert to positive for display
+
+    // CAGR calculation
+    const firstDate = new Date(sortedEntries[0].date)
+    const lastDate = new Date(sortedEntries[sortedEntries.length - 1].date)
+    const yearsElapsed = (lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24 * 365.25)
+    const cagr = yearsElapsed > 0
+      ? (Math.pow(finalAccountValue / initialCapital, 1 / yearsElapsed) - 1) * 100
+      : undefined
+
+    // Calmar Ratio: CAGR / Max Drawdown
+    const calmarRatio = cagr !== undefined && maxDrawdown > 0
+      ? cagr / maxDrawdown
+      : undefined
+
+    // Calculate win/loss streaks (day-based)
+    let maxWinStreak = 0
+    let maxLossStreak = 0
+    let currentWinStreak = 0
+    let currentLossStreak = 0
+
+    for (const entry of sortedEntries) {
+      if (entry.dailyReturnPct > 0) {
+        currentWinStreak++
+        currentLossStreak = 0
+        maxWinStreak = Math.max(maxWinStreak, currentWinStreak)
+      } else if (entry.dailyReturnPct < 0) {
+        currentLossStreak++
+        currentWinStreak = 0
+        maxLossStreak = Math.max(maxLossStreak, currentLossStreak)
+      } else {
+        currentWinStreak = 0
+        currentLossStreak = 0
+      }
+    }
+
+    const currentStreak = currentWinStreak > 0 ? currentWinStreak : currentLossStreak > 0 ? -currentLossStreak : 0
+
+    // Time in drawdown: percentage of days where account value < peak
+    let daysInDrawdown = 0
+    peak = initialCapital
+    for (const entry of sortedEntries) {
+      if (entry.accountValue > peak) {
+        peak = entry.accountValue
+      }
+      if (entry.accountValue < peak) {
+        daysInDrawdown++
+      }
+    }
+    const timeInDrawdown = (daysInDrawdown / totalDays) * 100
+
+    // Periodic win rates (not applicable for equity curve data without time granularity)
+    // Set to 0 for now as we don't have intraday data
+    const monthlyWinRate = 0
+    const weeklyWinRate = 0
+
+    // Kelly Percentage (not applicable for equity curve data)
+    const kellyPercentage = undefined
+
+    return {
+      totalTrades: totalDays, // Using "days" as the unit instead of "trades"
+      totalPl,
+      winningTrades: profitableDays.length,
+      losingTrades: losingDays.length,
+      breakEvenTrades: breakEvenDays.length,
+      winRate,
+      avgWin,
+      avgLoss,
+      maxWin,
+      maxLoss,
+      sharpeRatio,
+      sortinoRatio,
+      calmarRatio,
+      cagr,
+      kellyPercentage,
+      maxWinStreak,
+      maxLossStreak,
+      currentStreak,
+      timeInDrawdown,
+      monthlyWinRate,
+      weeklyWinRate,
+      maxDrawdown,
+      avgDailyPl,
+      totalCommissions: 0, // No commission data in equity curves
+      netPl: totalPl, // Same as totalPl since no commissions
+      profitFactor,
+      initialCapital,
+      totalReturn: totalReturn * 100, // Convert to percentage
+    }
   }
 
   /**
