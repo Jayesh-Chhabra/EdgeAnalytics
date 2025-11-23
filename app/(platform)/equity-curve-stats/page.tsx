@@ -184,6 +184,68 @@ export default function EquityCurveStatsPage() {
     return Math.sqrt(variance) * 100; // Convert to percentage (0-100)
   };
 
+  const getAvgMarginUsage = () => {
+    if (equityCurveEntries.length === 0) return 0;
+
+    const marginsWithValue = equityCurveEntries.filter(
+      (entry) => entry.marginReq && entry.marginReq > 0
+    );
+
+    if (marginsWithValue.length === 0) return 0;
+
+    const totalMargin = marginsWithValue.reduce((sum, e) => {
+      // Normalize margin: if > 1, it's stored as percentage (e.g., 50)
+      const marginDecimal = e.marginReq > 1 ? e.marginReq : e.marginReq * 100;
+      return sum + marginDecimal;
+    }, 0);
+
+    return totalMargin / marginsWithValue.length;
+  };
+
+  const getMaxMarginUsage = () => {
+    if (equityCurveEntries.length === 0) return 0;
+
+    const marginsWithValue = equityCurveEntries.filter(
+      (entry) => entry.marginReq && entry.marginReq > 0
+    );
+
+    if (marginsWithValue.length === 0) return 0;
+
+    return Math.max(
+      ...marginsWithValue.map((e) => (e.marginReq > 1 ? e.marginReq : e.marginReq * 100))
+    );
+  };
+
+  const get75thPercentileMarginUsage = () => {
+    if (equityCurveEntries.length === 0) return 0;
+
+    const marginsWithValue = equityCurveEntries
+      .filter((entry) => entry.marginReq && entry.marginReq > 0)
+      .map((e) => (e.marginReq > 1 ? e.marginReq : e.marginReq * 100))
+      .sort((a, b) => a - b);
+
+    if (marginsWithValue.length === 0) return 0;
+
+    const index = Math.ceil(marginsWithValue.length * 0.75) - 1;
+    return marginsWithValue[index];
+  };
+
+  const getMaxSingleDayLoss = () => {
+    if (equityCurveEntries.length === 0) return 0;
+
+    const losingDays = equityCurveEntries.filter((e) => e.dailyReturnPct < 0);
+
+    if (losingDays.length === 0) return 0;
+
+    // Find the worst day (most negative return)
+    const worstDay = losingDays.reduce((worst, current) => {
+      return current.dailyReturnPct < worst.dailyReturnPct ? current : worst;
+    });
+
+    // Convert to dollar loss
+    return worstDay.accountValue * worstDay.dailyReturnPct;
+  };
+
   // Show loading state
   if (!isInitialized || isLoading) {
     return (
@@ -482,6 +544,17 @@ export default function EquityCurveStatsPage() {
           }}
         />
         <MetricCard
+          title="Max Single Day Loss"
+          value={getMaxSingleDayLoss()}
+          format="currency"
+          isPositive={false}
+          tooltip={{
+            flavor: "Worst single day loss in dollar terms",
+            detailed:
+              "The largest dollar amount lost in a single day. This represents your worst trading day and helps you understand extreme downside risk.",
+          }}
+        />
+        <MetricCard
           title="Sharpe Ratio"
           value={portfolioStats?.sharpeRatio || 0}
           format="decimal"
@@ -512,6 +585,37 @@ export default function EquityCurveStatsPage() {
             flavor: "Return relative to max drawdown",
             detailed:
               "Annual return divided by maximum drawdown. Higher values indicate better risk-adjusted performance.",
+          }}
+        />
+        <MetricCard
+          title="Average Margin Usage"
+          value={getAvgMarginUsage()}
+          format="percentage"
+          tooltip={{
+            flavor: "Average margin requirement across all days",
+            detailed:
+              "The average percentage of your account value used as margin. Lower values indicate more conservative leverage usage.",
+          }}
+        />
+        <MetricCard
+          title="Max Margin Usage"
+          value={getMaxMarginUsage()}
+          format="percentage"
+          isPositive={false}
+          tooltip={{
+            flavor: "Highest margin requirement on any single day",
+            detailed:
+              "The maximum margin used on any trading day. This shows your peak leverage exposure and capital at risk.",
+          }}
+        />
+        <MetricCard
+          title="75th %ile Margin Usage"
+          value={get75thPercentileMarginUsage()}
+          format="percentage"
+          tooltip={{
+            flavor: "75th percentile of margin usage",
+            detailed:
+              "The margin requirement at the 75th percentile. This shows that 75% of days had margin usage at or below this level.",
           }}
         />
       </MetricSection>
