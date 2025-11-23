@@ -2,6 +2,7 @@
 
 import { BlockDialog } from "@/components/block-dialog";
 import { EquityCurveUploadDialog } from "@/components/equity-curve-upload-dialog";
+import { EquityCurveEditDialog } from "@/components/equity-curve-edit-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +17,7 @@ import {
 import { useBlockStore, type Block, isTradeBasedBlock, isEquityCurveBlock } from "@/lib/stores/block-store";
 import { Activity, Calendar, ChevronDown, Download, FileSpreadsheet, Grid3X3, Info, List, Plus, Search, RotateCcw, TrendingUp } from "lucide-react";
 import React, { useState } from "react";
+import { toast } from "sonner";
 
 function BlockCard({
   block,
@@ -327,6 +329,7 @@ export default function BlockManagementPage() {
   const loadBlocks = useBlockStore(state => state.loadBlocks);
   const [isBlockDialogOpen, setIsBlockDialogOpen] = useState(false);
   const [isEquityCurveDialogOpen, setIsEquityCurveDialogOpen] = useState(false);
+  const [isEquityCurveEditDialogOpen, setIsEquityCurveEditDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"new" | "edit">("new");
   const [selectedBlock, setSelectedBlock] = useState<Block | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -360,15 +363,16 @@ export default function BlockManagementPage() {
   };
 
   const handleEditBlock = (block: Block) => {
-    // Only allow editing trade-based blocks for now
-    if (isEquityCurveBlock(block)) {
-      toast.error("Editing equity curve blocks is not yet supported");
-      return;
-    }
-
-    setDialogMode("edit");
     setSelectedBlock(block);
-    setIsBlockDialogOpen(true);
+
+    if (isEquityCurveBlock(block)) {
+      // Open equity curve edit dialog
+      setIsEquityCurveEditDialogOpen(true);
+    } else {
+      // Open trade-based block dialog in edit mode
+      setDialogMode("edit");
+      setIsBlockDialogOpen(true);
+    }
   };
 
   const handleDownloadTemplate = (type: 'complete' | 'minimal') => {
@@ -640,6 +644,13 @@ export default function BlockManagementPage() {
         open={isEquityCurveDialogOpen}
         onOpenChange={setIsEquityCurveDialogOpen}
         onSuccess={handleEquityCurveSuccess}
+      />
+
+      <EquityCurveEditDialog
+        open={isEquityCurveEditDialogOpen}
+        onOpenChange={setIsEquityCurveEditDialogOpen}
+        block={isEquityCurveBlock(selectedBlock) ? selectedBlock : null}
+        onSuccess={loadBlocks}
       />
     </div>
   );
