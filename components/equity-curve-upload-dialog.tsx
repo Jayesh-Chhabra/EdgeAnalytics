@@ -146,6 +146,7 @@ export function EquityCurveUploadDialog({
     setProgress(0);
 
     try {
+      console.log('Starting block save...');
       const now = new Date();
       const timestamp = Date.now();
 
@@ -180,22 +181,31 @@ export function EquityCurveUploadDialog({
         },
       };
 
+      console.log('Saving block to IndexedDB...', genericBlock);
+
       // Save to IndexedDB
       const savedBlock = (await createBlock(
         genericBlock as any
       )) as unknown as GenericBlock;
 
+      console.log('Block saved, ID:', savedBlock.id);
+
       // Add equity curve entries
+      console.log('Adding equity curve entries:', fileState.result.curve.entries.length, 'entries');
       await addEquityCurveEntries(savedBlock.id, fileState.result.curve.entries);
+
+      console.log('Equity curve entries saved successfully');
 
       toast.success(`Generic block "${blockName}" created successfully!`);
 
       if (onSuccess) {
+        console.log('Calling onSuccess callback');
         onSuccess(savedBlock.id);
       }
 
       handleOpenChange(false);
     } catch (error) {
+      console.error('Error saving block:', error);
       const errorMsg = error instanceof Error ? error.message : String(error);
       toast.error(`Failed to save block: ${errorMsg}`);
       setErrors([errorMsg]);
