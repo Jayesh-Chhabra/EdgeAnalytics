@@ -362,6 +362,17 @@ export default function EquityCurveStatsPage() {
           }}
         />
         <MetricCard
+          title="Total Return"
+          value={portfolioStats?.totalReturn || 0}
+          format="percentage"
+          isPositive={(portfolioStats?.totalReturn || 0) > 0}
+          tooltip={{
+            flavor: "Total percentage gain or loss",
+            detailed:
+              "The overall percentage return from start to finish. This normalizes performance relative to starting capital.",
+          }}
+        />
+        <MetricCard
           title="CAGR"
           value={portfolioStats?.cagr || 0}
           format="percentage"
@@ -427,17 +438,6 @@ export default function EquityCurveStatsPage() {
             flavor: "Average win divided by average loss (day-based)",
             detailed:
               "The ratio of average winning day to average losing day. This is a day-based metric. Values above 1.0 mean wins are larger than losses on average.",
-          }}
-        />
-        <MetricCard
-          title="Total Return"
-          value={portfolioStats?.totalReturn || 0}
-          format="percentage"
-          isPositive={(portfolioStats?.totalReturn || 0) > 0}
-          tooltip={{
-            flavor: "Total percentage gain or loss",
-            detailed:
-              "The overall percentage return from start to finish. This normalizes performance relative to starting capital.",
           }}
         />
         <MetricCard
