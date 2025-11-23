@@ -2,19 +2,21 @@
  * Blocks Store - CRUD operations for trading blocks
  */
 
-import { ProcessedBlock, Block } from '../models/block'
+import { ProcessedBlock, Block, AnyBlock, GenericBlock, SuperBlock } from '../models/block'
 import { STORES, withReadTransaction, withWriteTransaction, promisifyRequest, DatabaseError } from './index'
 
 /**
- * Create a new block
+ * Create a new block (supports all block types)
  */
-export async function createBlock(blockData: Omit<ProcessedBlock, 'id' | 'created' | 'lastModified'>): Promise<ProcessedBlock> {
-  const block: ProcessedBlock = {
+export async function createBlock<T extends AnyBlock>(
+  blockData: Omit<T, 'id' | 'created' | 'lastModified'>
+): Promise<T> {
+  const block = {
     ...blockData,
     id: crypto.randomUUID(),
     created: new Date(),
     lastModified: new Date(),
-  }
+  } as T
 
   await withWriteTransaction(STORES.BLOCKS, async (transaction) => {
     const store = transaction.objectStore(STORES.BLOCKS)
@@ -27,7 +29,7 @@ export async function createBlock(blockData: Omit<ProcessedBlock, 'id' | 'create
 /**
  * Get block by ID
  */
-export async function getBlock(blockId: string): Promise<ProcessedBlock | null> {
+export async function getBlock(blockId: string): Promise<AnyBlock | null> {
   return withReadTransaction(STORES.BLOCKS, async (transaction) => {
     const store = transaction.objectStore(STORES.BLOCKS)
     const result = await promisifyRequest(store.get(blockId))
@@ -38,7 +40,7 @@ export async function getBlock(blockId: string): Promise<ProcessedBlock | null> 
 /**
  * Get all blocks
  */
-export async function getAllBlocks(): Promise<ProcessedBlock[]> {
+export async function getAllBlocks(): Promise<AnyBlock[]> {
   return withReadTransaction(STORES.BLOCKS, async (transaction) => {
     const store = transaction.objectStore(STORES.BLOCKS)
     const result = await promisifyRequest(store.getAll())
@@ -51,7 +53,7 @@ export async function getAllBlocks(): Promise<ProcessedBlock[]> {
 /**
  * Get active block
  */
-export async function getActiveBlock(): Promise<ProcessedBlock | null> {
+export async function getActiveBlock(): Promise<AnyBlock | null> {
   return withReadTransaction(STORES.BLOCKS, async (transaction) => {
     const store = transaction.objectStore(STORES.BLOCKS)
     const index = store.index('isActive')
@@ -63,7 +65,7 @@ export async function getActiveBlock(): Promise<ProcessedBlock | null> {
 /**
  * Update block
  */
-export async function updateBlock(blockId: string, updates: Partial<ProcessedBlock>): Promise<ProcessedBlock> {
+export async function updateBlock(blockId: string, updates: Partial<AnyBlock>): Promise<AnyBlock> {
   return withWriteTransaction(STORES.BLOCKS, async (transaction) => {
     const store = transaction.objectStore(STORES.BLOCKS)
 
@@ -74,7 +76,7 @@ export async function updateBlock(blockId: string, updates: Partial<ProcessedBlo
     }
 
     // Merge updates with lastModified timestamp
-    const updatedBlock: ProcessedBlock = {
+    const updatedBlock: AnyBlock = {
       ...existing,
       ...updates,
       lastModified: new Date(),
@@ -230,7 +232,7 @@ export async function isBlockNameUnique(name: string, excludeId?: string): Promi
  */
 export async function updateProcessingStatus(
   blockId: string,
-  status: ProcessedBlock['processingStatus'],
+  status: AnyBlock['processingStatus'],
   error?: string
 ): Promise<void> {
   await updateBlock(blockId, {
@@ -245,9 +247,9 @@ export async function updateProcessingStatus(
  */
 export async function updateBlockStats(
   blockId: string,
-  portfolioStats: ProcessedBlock['portfolioStats'],
-  strategyStats?: ProcessedBlock['strategyStats'],
-  performanceMetrics?: ProcessedBlock['performanceMetrics']
+  portfolioStats: AnyBlock['portfolioStats'],
+  strategyStats?: AnyBlock['strategyStats'],
+  performanceMetrics?: AnyBlock['performanceMetrics']
 ): Promise<void> {
   await updateBlock(blockId, {
     portfolioStats,

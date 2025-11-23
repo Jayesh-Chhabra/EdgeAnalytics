@@ -234,10 +234,6 @@ export default function CorrelationMatrixPage() {
 
   const isDark = theme === "dark";
 
-  const activeBlock = useBlockStore(
-    (state) => state.blocks.find((block) => block.id === activeBlockId)
-  );
-
   const handleDownloadCsv = useCallback(() => {
     if (!correlationMatrix) {
       return;
