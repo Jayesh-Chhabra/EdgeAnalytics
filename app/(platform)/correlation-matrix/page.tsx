@@ -26,9 +26,16 @@ import {
   CorrelationMatrix,
   CorrelationNormalization,
 } from "@/lib/calculations/correlation";
+import {
+  calculateEquityCurveCorrelationMatrix,
+  calculateEquityCurveCorrelationAnalytics,
+} from "@/lib/calculations/equity-curve-correlation";
 import { getTradesByBlock } from "@/lib/db/trades-store";
+import { getEquityCurvesByBlock, getBlock } from "@/lib/db";
 import { Trade } from "@/lib/models/trade";
-import { useBlockStore } from "@/lib/stores/block-store";
+import { EquityCurveEntry } from "@/lib/models/equity-curve";
+import { isGenericBlock } from "@/lib/models/block";
+import { useBlockStore, isEquityCurveBlock } from "@/lib/stores/block-store";
 import { truncateStrategyName } from "@/lib/utils";
 import { Download, HelpCircle, Info } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -37,10 +44,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 export default function CorrelationMatrixPage() {
   const { theme } = useTheme();
-  const activeBlockId = useBlockStore(
-    (state) => state.blocks.find((b) => b.isActive)?.id
+  const activeBlock = useBlockStore(
+    (state) => state.blocks.find((b) => b.isActive)
   );
+  const activeBlockId = activeBlock?.id;
   const [trades, setTrades] = useState<Trade[]>([]);
+  const [equityCurveEntries, setEquityCurveEntries] = useState<EquityCurveEntry[]>([]);
+  const [blockType, setBlockType] = useState<'trade-based' | 'equity-curve' | null>(null);
   const [loading, setLoading] = useState(true);
   const [method, setMethod] = useState<CorrelationMethod>("kendall");
   const [alignment, setAlignment] = useState<CorrelationAlignment>("shared");
@@ -60,41 +70,66 @@ export default function CorrelationMatrixPage() {
   );
 
   useEffect(() => {
-    async function loadTrades() {
-      if (!activeBlockId) {
+    async function loadData() {
+      if (!activeBlockId || !activeBlock) {
         setLoading(false);
+        setBlockType(null);
         return;
       }
 
       setLoading(true);
       try {
-        const loadedTrades = await getTradesByBlock(activeBlockId);
-        setTrades(loadedTrades);
+        if (isEquityCurveBlock(activeBlock)) {
+          // Load equity curve entries
+          const entries = await getEquityCurvesByBlock(activeBlockId);
+          setEquityCurveEntries(entries);
+          setTrades([]);
+          setBlockType('equity-curve');
+        } else {
+          // Load trades
+          const loadedTrades = await getTradesByBlock(activeBlockId);
+          setTrades(loadedTrades);
+          setEquityCurveEntries([]);
+          setBlockType('trade-based');
+        }
       } catch (error) {
-        console.error("Failed to load trades:", error);
+        console.error("Failed to load data:", error);
       } finally {
         setLoading(false);
       }
     }
 
-    loadTrades();
-  }, [activeBlockId]);
+    loadData();
+  }, [activeBlockId, activeBlock]);
 
   const { correlationMatrix, analytics } = useMemo(() => {
-    if (trades.length === 0) {
-      return { correlationMatrix: null, analytics: null };
+    if (blockType === 'equity-curve') {
+      if (equityCurveEntries.length === 0) {
+        return { correlationMatrix: null, analytics: null };
+      }
+
+      // For equity curves, use simpler method (pearson or spearman)
+      const correlationMethod = method === 'kendall' ? 'pearson' : 'pearson';
+      const matrix = calculateEquityCurveCorrelationMatrix(equityCurveEntries, correlationMethod);
+      const stats = calculateEquityCurveCorrelationAnalytics(matrix);
+
+      return { correlationMatrix: matrix, analytics: stats };
+    } else {
+      if (trades.length === 0) {
+        return { correlationMatrix: null, analytics: null };
+      }
+
+      const matrix = calculateCorrelationMatrix(trades, {
+        method,
+        alignment,
+        normalization,
+        dateBasis,
+      });
+      const stats = calculateCorrelationAnalytics(matrix);
+
+      return { correlationMatrix: matrix, analytics: stats };
     }
-
-    const matrix = calculateCorrelationMatrix(trades, {
-      method,
-      alignment,
-      normalization,
-      dateBasis,
-    });
-    const stats = calculateCorrelationAnalytics(matrix);
-
-    return { correlationMatrix: matrix, analytics: stats };
-  }, [trades, method, alignment, normalization, dateBasis]);
+  }, [blockType, trades, equityCurveEntries, method, alignment, normalization, dateBasis]);
 
   const { plotData, layout } = useMemo(() => {
     if (!correlationMatrix) {
