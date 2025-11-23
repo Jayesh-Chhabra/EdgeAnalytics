@@ -151,7 +151,11 @@ export default function EquityCurveStatsPage() {
     // Calculate daily RoM for each entry
     const romsWithMargin = equityCurveEntries
       .filter((entry) => entry.marginReq && entry.marginReq > 0)
-      .map((entry) => entry.dailyReturnPct / entry.marginReq);
+      .map((entry) => {
+        // Normalize margin: if > 1, it's stored as percentage (e.g., 50), so convert to decimal (0.5)
+        const marginDecimal = entry.marginReq > 1 ? entry.marginReq / 100 : entry.marginReq;
+        return entry.dailyReturnPct / marginDecimal;
+      });
 
     if (romsWithMargin.length === 0) return 0;
 
@@ -164,7 +168,11 @@ export default function EquityCurveStatsPage() {
 
     const romsWithMargin = equityCurveEntries
       .filter((entry) => entry.marginReq && entry.marginReq > 0)
-      .map((entry) => entry.dailyReturnPct / entry.marginReq);
+      .map((entry) => {
+        // Normalize margin: if > 1, it's stored as percentage (e.g., 50), so convert to decimal (0.5)
+        const marginDecimal = entry.marginReq > 1 ? entry.marginReq / 100 : entry.marginReq;
+        return entry.dailyReturnPct / marginDecimal;
+      });
 
     if (romsWithMargin.length === 0) return 0;
 
