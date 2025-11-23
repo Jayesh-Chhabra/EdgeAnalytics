@@ -398,7 +398,7 @@ export default function BlockManagementPage() {
         <div className="flex items-center gap-2">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" suppressHydrationWarning>
                 <Download className="w-4 h-4 sm:mr-2" />
                 <span className="hidden sm:inline">Template</span>
                 <ChevronDown className="w-3 h-3 ml-1 opacity-50" />
@@ -439,7 +439,7 @@ export default function BlockManagementPage() {
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button>
+              <Button suppressHydrationWarning>
                 <Plus className="w-4 h-4 mr-2" />
                 New Block
                 <ChevronDown className="w-3 h-3 ml-1 opacity-50" />
@@ -537,7 +537,7 @@ export default function BlockManagementPage() {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-6">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button>
+                  <Button suppressHydrationWarning>
                     <Plus className="w-4 h-4 mr-2" />
                     Create First Block
                     <ChevronDown className="w-3 h-3 ml-1 opacity-50" />
@@ -567,7 +567,7 @@ export default function BlockManagementPage() {
               </DropdownMenu>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline">
+                  <Button variant="outline" suppressHydrationWarning>
                     <Download className="w-4 h-4 mr-2" />
                     Download Template
                     <ChevronDown className="w-3 h-3 ml-1 opacity-50" />

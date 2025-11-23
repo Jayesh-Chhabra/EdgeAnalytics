@@ -69,7 +69,7 @@ import {
   TradeProcessingResult,
   TradeProcessor,
 } from "@/lib/processing/trade-processor";
-import { useBlockStore } from "@/lib/stores/block-store";
+import { useBlockStore, Block, isTradeBasedBlock } from "@/lib/stores/block-store";
 import { useComparisonStore } from "@/lib/stores/comparison-store";
 import {
   findMissingHeaders,
@@ -242,6 +242,12 @@ export function BlockDialog({
     }
 
     if (mode === "edit" && block) {
+      // Only allow editing trade-based blocks in this dialog
+      if (!isTradeBasedBlock(block)) {
+        console.error("BlockDialog: Cannot edit non-trade-based blocks");
+        return;
+      }
+
       // Pre-populate for edit mode
       setName(block.name);
       setDescription(block.description || "");
