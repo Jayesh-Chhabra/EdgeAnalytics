@@ -400,13 +400,13 @@ export function EquityCurveColumnMapper({
       {!isValid && validation.errors.length > 0 && (
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
+          <div className="text-sm text-muted-foreground">
             <ul className="list-disc list-inside space-y-1">
               {validation.errors.map((error, index) => (
                 <li key={index}>{error}</li>
               ))}
             </ul>
-          </AlertDescription>
+          </div>
         </Alert>
       )}
 

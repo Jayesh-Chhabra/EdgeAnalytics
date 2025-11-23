@@ -146,6 +146,7 @@ export function EquityCurveUploadDialog({
     setProgress(0);
 
     try {
+      console.log('Starting block save...');
       const now = new Date();
       const timestamp = Date.now();
 
@@ -180,22 +181,31 @@ export function EquityCurveUploadDialog({
         },
       };
 
+      console.log('Saving block to IndexedDB...', genericBlock);
+
       // Save to IndexedDB
       const savedBlock = (await createBlock(
         genericBlock as any
       )) as unknown as GenericBlock;
 
+      console.log('Block saved, ID:', savedBlock.id);
+
       // Add equity curve entries
+      console.log('Adding equity curve entries:', fileState.result.curve.entries.length, 'entries');
       await addEquityCurveEntries(savedBlock.id, fileState.result.curve.entries);
+
+      console.log('Equity curve entries saved successfully');
 
       toast.success(`Generic block "${blockName}" created successfully!`);
 
       if (onSuccess) {
+        console.log('Calling onSuccess callback');
         onSuccess(savedBlock.id);
       }
 
       handleOpenChange(false);
     } catch (error) {
+      console.error('Error saving block:', error);
       const errorMsg = error instanceof Error ? error.message : String(error);
       toast.error(`Failed to save block: ${errorMsg}`);
       setErrors([errorMsg]);
@@ -215,7 +225,7 @@ export function EquityCurveUploadDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className={`${stage === 'map-columns' ? 'sm:max-w-[90vw] lg:max-w-[1700px]' : 'sm:max-w-2xl'} max-h-[90vh] overflow-y-auto`}>
+      <DialogContent className={`${stage === 'map-columns' ? 'sm:max-w-[90vw] lg:max-w-[1700px]' : 'sm:max-w-2xl'} max-h-[95vh] overflow-y-auto`}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5" />
@@ -323,13 +333,13 @@ export function EquityCurveUploadDialog({
             <div className="space-y-4">
               <Alert>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <AlertDescription>
+                <div className="text-sm text-muted-foreground">
                   <div className="space-y-2">
                     <p className="font-medium">Processing equity curve...</p>
                     <Progress value={progress} className="h-2" />
                     <p className="text-xs text-muted-foreground">{progress}% complete</p>
                   </div>
-                </AlertDescription>
+                </div>
               </Alert>
             </div>
           )}
