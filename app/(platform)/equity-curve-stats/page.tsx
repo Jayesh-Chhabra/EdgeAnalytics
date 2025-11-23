@@ -140,9 +140,9 @@ export default function EquityCurveStatsPage() {
   const getAvgDailyReturn = () => {
     if (equityCurveEntries.length === 0) return 0;
 
-    // Calculate average daily return as a decimal
+    // Calculate average daily return and convert to percentage (0-100)
     const totalReturn = equityCurveEntries.reduce((sum, e) => sum + e.dailyReturnPct, 0);
-    return totalReturn / equityCurveEntries.length;
+    return (totalReturn / equityCurveEntries.length) * 100;
   };
 
   const getAvgReturnOnMargin = () => {
@@ -156,7 +156,7 @@ export default function EquityCurveStatsPage() {
     if (romsWithMargin.length === 0) return 0;
 
     const totalRoM = romsWithMargin.reduce((sum, rom) => sum + rom, 0);
-    return totalRoM / romsWithMargin.length;
+    return (totalRoM / romsWithMargin.length) * 100; // Convert to percentage (0-100)
   };
 
   const getStdDevOfRoM = () => {
@@ -168,12 +168,12 @@ export default function EquityCurveStatsPage() {
 
     if (romsWithMargin.length === 0) return 0;
 
-    const avgRoM = getAvgReturnOnMargin();
+    const avgRoM = getAvgReturnOnMargin() / 100; // Convert back to decimal for std dev calculation
     const variance =
       romsWithMargin.reduce((sum, rom) => sum + Math.pow(rom - avgRoM, 2), 0) /
       romsWithMargin.length;
 
-    return Math.sqrt(variance);
+    return Math.sqrt(variance) * 100; // Convert to percentage (0-100)
   };
 
   // Show loading state
@@ -368,7 +368,7 @@ export default function EquityCurveStatsPage() {
           title="Win Rate"
           value={portfolioStats?.winRate || 0}
           format="percentage"
-          isPositive={(portfolioStats?.winRate || 0) > 0.5}
+          isPositive={(portfolioStats?.winRate || 0) > 50}
           tooltip={{
             flavor: "Percentage of profitable days",
             detailed:
