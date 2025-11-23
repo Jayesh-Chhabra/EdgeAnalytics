@@ -216,7 +216,7 @@ export default function EquityCurveStatsPage() {
     );
   };
 
-  const get75thPercentileMarginUsage = () => {
+  const get90thPercentileMarginUsage = () => {
     if (equityCurveEntries.length === 0) return 0;
 
     const marginsWithValue = equityCurveEntries
@@ -226,7 +226,7 @@ export default function EquityCurveStatsPage() {
 
     if (marginsWithValue.length === 0) return 0;
 
-    const index = Math.ceil(marginsWithValue.length * 0.75) - 1;
+    const index = Math.ceil(marginsWithValue.length * 0.90) - 1;
     return marginsWithValue[index];
   };
 
@@ -237,13 +237,13 @@ export default function EquityCurveStatsPage() {
 
     if (losingDays.length === 0) return 0;
 
-    // Find the worst day (most negative return)
+    // Find the worst day (most negative return percentage)
     const worstDay = losingDays.reduce((worst, current) => {
       return current.dailyReturnPct < worst.dailyReturnPct ? current : worst;
     });
 
-    // Convert to dollar loss
-    return worstDay.accountValue * worstDay.dailyReturnPct;
+    // Return as percentage (multiply by 100)
+    return Math.abs(worstDay.dailyReturnPct * 100);
   };
 
   // Show loading state
@@ -544,17 +544,6 @@ export default function EquityCurveStatsPage() {
           }}
         />
         <MetricCard
-          title="Max Single Day Loss"
-          value={getMaxSingleDayLoss()}
-          format="currency"
-          isPositive={false}
-          tooltip={{
-            flavor: "Worst single day loss in dollar terms",
-            detailed:
-              "The largest dollar amount lost in a single day. This represents your worst trading day and helps you understand extreme downside risk.",
-          }}
-        />
-        <MetricCard
           title="Sharpe Ratio"
           value={portfolioStats?.sharpeRatio || 0}
           format="decimal"
@@ -588,6 +577,17 @@ export default function EquityCurveStatsPage() {
           }}
         />
         <MetricCard
+          title="Max Single Day Loss"
+          value={getMaxSingleDayLoss()}
+          format="percentage"
+          isPositive={false}
+          tooltip={{
+            flavor: "Worst single day loss as a percentage",
+            detailed:
+              "The largest percentage loss in a single day. This represents your worst trading day and helps you understand extreme downside risk.",
+          }}
+        />
+        <MetricCard
           title="Average Margin Usage"
           value={getAvgMarginUsage()}
           format="percentage"
@@ -609,13 +609,13 @@ export default function EquityCurveStatsPage() {
           }}
         />
         <MetricCard
-          title="75th %ile Margin Usage"
-          value={get75thPercentileMarginUsage()}
+          title="90th %ile Margin Usage"
+          value={get90thPercentileMarginUsage()}
           format="percentage"
           tooltip={{
-            flavor: "75th percentile of margin usage",
+            flavor: "90th percentile of margin usage",
             detailed:
-              "The margin requirement at the 75th percentile. This shows that 75% of days had margin usage at or below this level.",
+              "The margin requirement at the 90th percentile. This shows that 90% of days had margin usage at or below this level.",
           }}
         />
       </MetricSection>
