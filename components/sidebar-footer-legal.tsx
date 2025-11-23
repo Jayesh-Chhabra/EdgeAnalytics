@@ -61,6 +61,7 @@ export function SidebarFooterLegal() {
                 variant="link"
                 size="sm"
                 className="h-auto p-0 text-[0.72rem] font-medium text-primary"
+                suppressHydrationWarning
               >
                 Full Disclaimer
               </Button>

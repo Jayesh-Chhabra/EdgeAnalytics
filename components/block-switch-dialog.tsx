@@ -13,14 +13,15 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { useBlockStore } from "@/lib/stores/block-store";
+import { useBlockStore, isTradeBasedBlock, isEquityCurveBlock } from "@/lib/stores/block-store";
 import {
   Search,
   Check,
   Activity,
   Calendar,
   Plus,
-  Settings
+  Settings,
+  LineChart
 } from "lucide-react";
 
 interface BlockSwitchDialogProps {
@@ -115,16 +116,25 @@ export function BlockSwitchDialog({ open, onOpenChange }: BlockSwitchDialogProps
 
                   {/* File Indicators */}
                   <div className="flex gap-2">
-                    <Badge variant="secondary" className="text-xs">
-                      <Activity className="w-3 h-3 mr-1" />
-                      Trade Log ({block.tradeLog.rowCount})
-                    </Badge>
-                    {block.dailyLog && (
-                      <Badge variant="outline" className="text-xs">
-                        <Calendar className="w-3 h-3 mr-1" />
-                        Daily Log ({block.dailyLog.rowCount})
+                    {isTradeBasedBlock(block) ? (
+                      <>
+                        <Badge variant="secondary" className="text-xs">
+                          <Activity className="w-3 h-3 mr-1" />
+                          Trade Log ({block.tradeLog.rowCount})
+                        </Badge>
+                        {block.dailyLog && (
+                          <Badge variant="outline" className="text-xs">
+                            <Calendar className="w-3 h-3 mr-1" />
+                            Daily Log ({block.dailyLog.rowCount})
+                          </Badge>
+                        )}
+                      </>
+                    ) : isEquityCurveBlock(block) ? (
+                      <Badge variant="secondary" className="text-xs">
+                        <LineChart className="w-3 h-3 mr-1" />
+                        {block.equityCurves.length} {block.equityCurves.length === 1 ? 'Strategy' : 'Strategies'}
                       </Badge>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>
