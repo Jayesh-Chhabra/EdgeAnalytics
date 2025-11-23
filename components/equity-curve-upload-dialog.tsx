@@ -184,9 +184,7 @@ export function EquityCurveUploadDialog({
       console.log('Saving block to IndexedDB...', genericBlock);
 
       // Save to IndexedDB
-      const savedBlock = (await createBlock(
-        genericBlock as any
-      )) as unknown as GenericBlock;
+      const savedBlock = await createBlock(genericBlock);
 
       console.log('Block saved, ID:', savedBlock.id);
 
