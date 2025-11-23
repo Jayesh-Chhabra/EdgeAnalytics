@@ -81,12 +81,12 @@ export interface EquityCurveBlock {
 export type Block = TradeBasedBlock | EquityCurveBlock;
 
 // Type guards
-export function isTradeBasedBlock(block: Block): block is TradeBasedBlock {
-  return block.type === 'trade-based';
+export function isTradeBasedBlock(block: Block | null): block is TradeBasedBlock {
+  return block !== null && block.type === 'trade-based';
 }
 
-export function isEquityCurveBlock(block: Block): block is EquityCurveBlock {
-  return block.type === 'equity-curve';
+export function isEquityCurveBlock(block: Block | null): block is EquityCurveBlock {
+  return block !== null && block.type === 'equity-curve';
 }
 
 interface BlockStore {
