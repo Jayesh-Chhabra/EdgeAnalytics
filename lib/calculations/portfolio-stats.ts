@@ -243,7 +243,7 @@ export class PortfolioStatsCalculator {
     const breakEvenDays = sortedEntries.filter(e => e.dailyReturnPct === 0)
 
     const totalDays = sortedEntries.length
-    const winRate = profitableDays.length / totalDays
+    const winRate = (profitableDays.length / totalDays) * 100 // Convert to percentage (0-100)
 
     // Calculate average win/loss (in dollar terms)
     const avgWin = profitableDays.length > 0
