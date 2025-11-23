@@ -138,6 +138,37 @@ export default function EquityCurveStatsPage() {
     return getTotalDays() - getProfitableDays();
   };
 
+  const getAvgReturnOnMargin = () => {
+    if (equityCurveEntries.length === 0) return 0;
+
+    // Calculate daily RoM for each entry
+    const romsWithMargin = equityCurveEntries
+      .filter((entry) => entry.marginReq && entry.marginReq > 0)
+      .map((entry) => (entry.dailyReturnPct / entry.marginReq) * 100);
+
+    if (romsWithMargin.length === 0) return 0;
+
+    const totalRoM = romsWithMargin.reduce((sum, rom) => sum + rom, 0);
+    return totalRoM / romsWithMargin.length;
+  };
+
+  const getStdDevOfRoM = () => {
+    if (equityCurveEntries.length === 0) return 0;
+
+    const romsWithMargin = equityCurveEntries
+      .filter((entry) => entry.marginReq && entry.marginReq > 0)
+      .map((entry) => (entry.dailyReturnPct / entry.marginReq) * 100);
+
+    if (romsWithMargin.length === 0) return 0;
+
+    const avgRoM = getAvgReturnOnMargin();
+    const variance =
+      romsWithMargin.reduce((sum, rom) => sum + Math.pow(rom - avgRoM, 2), 0) /
+      romsWithMargin.length;
+
+    return Math.sqrt(variance);
+  };
+
   // Show loading state
   if (!isInitialized || isLoading) {
     return (
@@ -242,7 +273,7 @@ export default function EquityCurveStatsPage() {
             {getDateRange()}
           </Badge>
         }
-        gridCols={3}
+        gridCols={5}
       >
         <MetricCard
           title="Total Days"
@@ -262,6 +293,27 @@ export default function EquityCurveStatsPage() {
             flavor: "The initial capital you started with",
             detailed:
               "The initial account value when tracking began. This serves as the baseline for calculating percentage returns and total growth.",
+          }}
+        />
+        <MetricCard
+          title="Avg Return on Margin"
+          value={getAvgReturnOnMargin()}
+          format="percentage"
+          isPositive={getAvgReturnOnMargin() > 0}
+          tooltip={{
+            flavor: "Average daily return relative to margin used",
+            detailed:
+              "Average return relative to margin required per day. This shows how efficiently you use margin. Higher values indicate more efficient use of buying power.",
+          }}
+        />
+        <MetricCard
+          title="Std Dev of RoM"
+          value={getStdDevOfRoM()}
+          format="percentage"
+          tooltip={{
+            flavor: "Variability in your daily return on margin",
+            detailed:
+              "Standard deviation of daily Return on Margin. Shows the consistency of your margin efficiency. Lower values indicate more predictable margin usage.",
           }}
         />
         <MetricCard
@@ -313,7 +365,7 @@ export default function EquityCurveStatsPage() {
           tooltip={{
             flavor: "Percentage of profitable days",
             detailed:
-              "The percentage of days with positive returns. A higher win rate means more consistent daily profitability.",
+              "The percentage of days with positive returns. Calculated as (number of profitable days / total days) × 100. A higher win rate means more consistent daily profitability.",
           }}
         />
         <MetricCard
@@ -324,7 +376,7 @@ export default function EquityCurveStatsPage() {
           tooltip={{
             flavor: "Average gain on profitable days",
             detailed:
-              "The average dollar amount gained on days when your equity increased. Compare this to average loss to assess risk/reward balance.",
+              "The average dollar amount gained on days when your equity increased. This is a day-based metric. Compare this to average loss to assess risk/reward balance.",
           }}
         />
         <MetricCard
@@ -335,7 +387,7 @@ export default function EquityCurveStatsPage() {
           tooltip={{
             flavor: "Average loss on losing days",
             detailed:
-              "The average dollar amount lost on days when your equity decreased. Smaller losses relative to wins indicate better risk management.",
+              "The average dollar amount lost on days when your equity decreased. This is a day-based metric. Smaller losses relative to wins indicate better risk management.",
           }}
         />
         <MetricCard
@@ -344,9 +396,9 @@ export default function EquityCurveStatsPage() {
           format="decimal"
           isPositive={(portfolioStats?.profitFactor || 0) > 1}
           tooltip={{
-            flavor: "Ratio of total gains to total losses",
+            flavor: "Total wins divided by total losses (day-based)",
             detailed:
-              "Total profits divided by total losses. Values above 1.0 indicate profitable performance. Higher is better.",
+              "Sum of all profitable days divided by sum of all losing days. This is a day-based metric. Values above 1.0 indicate profitable performance. Higher is better.",
           }}
         />
         <MetricCard
@@ -357,9 +409,9 @@ export default function EquityCurveStatsPage() {
           format="decimal"
           isPositive={true}
           tooltip={{
-            flavor: "Average win compared to average loss",
+            flavor: "Average win divided by average loss (day-based)",
             detailed:
-              "The ratio of average winning day to average losing day. Values above 1.0 mean wins are larger than losses on average.",
+              "The ratio of average winning day to average losing day. This is a day-based metric. Values above 1.0 mean wins are larger than losses on average.",
           }}
         />
         <MetricCard
