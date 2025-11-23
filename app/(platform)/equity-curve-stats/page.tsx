@@ -130,12 +130,19 @@ export default function EquityCurveStatsPage() {
   };
 
   const getProfitableDays = () => {
-    if (!portfolioStats) return 0;
-    return Math.round((portfolioStats.winRate / 100) * equityCurveEntries.length);
+    return portfolioStats?.winningTrades || 0;
   };
 
   const getLosingDays = () => {
-    return getTotalDays() - getProfitableDays();
+    return portfolioStats?.losingTrades || 0;
+  };
+
+  const getAvgDailyReturn = () => {
+    if (equityCurveEntries.length === 0) return 0;
+
+    // Calculate average daily return as a decimal
+    const totalReturn = equityCurveEntries.reduce((sum, e) => sum + e.dailyReturnPct, 0);
+    return totalReturn / equityCurveEntries.length;
   };
 
   const getAvgReturnOnMargin = () => {
@@ -144,7 +151,7 @@ export default function EquityCurveStatsPage() {
     // Calculate daily RoM for each entry
     const romsWithMargin = equityCurveEntries
       .filter((entry) => entry.marginReq && entry.marginReq > 0)
-      .map((entry) => (entry.dailyReturnPct / entry.marginReq) * 100);
+      .map((entry) => entry.dailyReturnPct / entry.marginReq);
 
     if (romsWithMargin.length === 0) return 0;
 
@@ -157,7 +164,7 @@ export default function EquityCurveStatsPage() {
 
     const romsWithMargin = equityCurveEntries
       .filter((entry) => entry.marginReq && entry.marginReq > 0)
-      .map((entry) => (entry.dailyReturnPct / entry.marginReq) * 100);
+      .map((entry) => entry.dailyReturnPct / entry.marginReq);
 
     if (romsWithMargin.length === 0) return 0;
 
@@ -361,11 +368,22 @@ export default function EquityCurveStatsPage() {
           title="Win Rate"
           value={portfolioStats?.winRate || 0}
           format="percentage"
-          isPositive={(portfolioStats?.winRate || 0) > 50}
+          isPositive={(portfolioStats?.winRate || 0) > 0.5}
           tooltip={{
             flavor: "Percentage of profitable days",
             detailed:
               "The percentage of days with positive returns. Calculated as (number of profitable days / total days) × 100. A higher win rate means more consistent daily profitability.",
+          }}
+        />
+        <MetricCard
+          title="Average Daily Return"
+          value={getAvgDailyReturn()}
+          format="percentage"
+          isPositive={getAvgDailyReturn() > 0}
+          tooltip={{
+            flavor: "Average return per day",
+            detailed:
+              "The average daily return across all trading days. This is calculated from the daily return percentages in your equity curve.",
           }}
         />
         <MetricCard
@@ -391,17 +409,6 @@ export default function EquityCurveStatsPage() {
           }}
         />
         <MetricCard
-          title="Profit Factor"
-          value={portfolioStats?.profitFactor || 0}
-          format="decimal"
-          isPositive={(portfolioStats?.profitFactor || 0) > 1}
-          tooltip={{
-            flavor: "Total wins divided by total losses (day-based)",
-            detailed:
-              "Sum of all profitable days divided by sum of all losing days. This is a day-based metric. Values above 1.0 indicate profitable performance. Higher is better.",
-          }}
-        />
-        <MetricCard
           title="Win/Loss Ratio"
           value={portfolioStats?.avgWin && portfolioStats?.avgLoss
             ? Math.abs(portfolioStats.avgWin / portfolioStats.avgLoss)
@@ -423,6 +430,28 @@ export default function EquityCurveStatsPage() {
             flavor: "Total percentage gain or loss",
             detailed:
               "The overall percentage return from start to finish. This normalizes performance relative to starting capital.",
+          }}
+        />
+        <MetricCard
+          title="Max Win Streak"
+          value={portfolioStats?.maxWinStreak || 0}
+          format="number"
+          isPositive={true}
+          tooltip={{
+            flavor: "Longest consecutive profitable days",
+            detailed:
+              "The maximum number of consecutive days with positive returns. Shows your best momentum period.",
+          }}
+        />
+        <MetricCard
+          title="Max Loss Streak"
+          value={portfolioStats?.maxLossStreak || 0}
+          format="number"
+          isPositive={false}
+          tooltip={{
+            flavor: "Longest consecutive losing days",
+            detailed:
+              "The maximum number of consecutive days with negative returns. Helps you prepare for challenging periods.",
           }}
         />
       </MetricSection>
@@ -475,36 +504,6 @@ export default function EquityCurveStatsPage() {
             flavor: "Return relative to max drawdown",
             detailed:
               "Annual return divided by maximum drawdown. Higher values indicate better risk-adjusted performance.",
-          }}
-        />
-      </MetricSection>
-
-      {/* Streak Metrics */}
-      <MetricSection
-        title="Streak Metrics"
-        icon={<TrendingUp className="w-4 h-4" />}
-        gridCols={2}
-      >
-        <MetricCard
-          title="Max Win Streak"
-          value={portfolioStats?.maxWinStreak || 0}
-          format="number"
-          isPositive={true}
-          tooltip={{
-            flavor: "Longest consecutive profitable days",
-            detailed:
-              "The maximum number of consecutive days with positive returns. Shows your best momentum period.",
-          }}
-        />
-        <MetricCard
-          title="Max Loss Streak"
-          value={portfolioStats?.maxLossStreak || 0}
-          format="number"
-          isPositive={false}
-          tooltip={{
-            flavor: "Longest consecutive losing days",
-            detailed:
-              "The maximum number of consecutive days with negative returns. Helps you prepare for challenging periods.",
           }}
         />
       </MetricSection>
