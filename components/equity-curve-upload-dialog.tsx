@@ -323,13 +323,13 @@ export function EquityCurveUploadDialog({
             <div className="space-y-4">
               <Alert>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <AlertDescription>
+                <div className="text-sm text-muted-foreground">
                   <div className="space-y-2">
                     <p className="font-medium">Processing equity curve...</p>
                     <Progress value={progress} className="h-2" />
                     <p className="text-xs text-muted-foreground">{progress}% complete</p>
                   </div>
-                </AlertDescription>
+                </div>
               </Alert>
             </div>
           )}
