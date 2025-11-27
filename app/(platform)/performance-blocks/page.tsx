@@ -186,8 +186,39 @@ export default function PerformanceBlocksPage() {
     );
   }
 
-  // Show empty state if no data
-  if (!data || data.allTrades.length === 0) {
+  // Show empty state if no data or if it's an equity curve block
+  if (!data) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center max-w-md">
+          <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-semibold mb-2">No Data Available</h3>
+          <p className="text-muted-foreground mb-4">
+            Please select a block to view performance analytics.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Equity curve blocks are not supported on this page
+  if (data.blockType === 'equity-curve') {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center max-w-md">
+          <TrendingUp className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-semibold mb-2">Equity Curve Block</h3>
+          <p className="text-muted-foreground mb-4">
+            This page shows trade-level performance analytics. For equity curve blocks,
+            please visit the Equity Curve Stats page.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show empty state if no trades
+  if (data.allTrades.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center max-w-md">
