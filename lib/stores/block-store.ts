@@ -7,11 +7,12 @@ import {
   getBlock,
   getDailyLogsByBlock,
   getReportingTradesByBlock,
-  getTradesByBlock,
   updateBlockStats,
   getEquityCurvesByBlock,
   getEquityCurveStrategiesByBlock,
+  storePerformanceSnapshotCache,
 } from "../db";
+import { buildPerformanceSnapshot, SnapshotProgress } from "../services/performance-snapshot";
 import { ProcessedBlock, GenericBlock, isGenericBlock } from "../models/block";
 import { StrategyAlignment } from "../models/strategy-alignment";
 
@@ -95,6 +96,7 @@ interface BlockStore {
   activeBlockId: string | null;
   isLoading: boolean;
   isInitialized: boolean;
+  isStuck: boolean;
   error: string | null;
 
   // Actions
@@ -107,7 +109,12 @@ interface BlockStore {
   updateBlock: (id: string, updates: Partial<Block>) => Promise<void>;
   deleteBlock: (id: string) => Promise<void>;
   refreshBlock: (id: string) => Promise<void>;
-  recalculateBlock: (id: string) => Promise<void>;
+  recalculateBlock: (
+    id: string,
+    onProgress?: (progress: SnapshotProgress) => void,
+    signal?: AbortSignal
+  ) => Promise<void>;
+  clearAllData: () => Promise<void>;
 }
 
 /**
@@ -198,12 +205,16 @@ async function convertGenericBlockToEquityCurveBlock(
   };
 }
 
+// Timeout for detecting stuck loading state (30 seconds)
+const LOAD_TIMEOUT_MS = 30000;
+
 export const useBlockStore = create<BlockStore>((set, get) => ({
   // Initialize with empty state
   blocks: [],
   activeBlockId: null,
   isLoading: false,
   isInitialized: false,
+  isStuck: false,
   error: null,
 
   // Load blocks from IndexedDB
@@ -215,9 +226,16 @@ export const useBlockStore = create<BlockStore>((set, get) => ({
       return;
     }
 
-    set({ isLoading: true, error: null });
+    set({ isLoading: true, error: null, isStuck: false });
 
-    try {
+    // Create timeout for stuck detection
+    const timeoutRef: { id: ReturnType<typeof setTimeout> | null } = { id: null };
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutRef.id = setTimeout(() => reject(new Error("LOAD_TIMEOUT")), LOAD_TIMEOUT_MS);
+    });
+
+    // Main loading logic wrapped in a promise for racing
+    const loadingPromise = (async () => {
       // Restore active block ID from localStorage
       const savedActiveBlockId = localStorage.getItem(
         "tradeblocks-active-block-id"
@@ -225,6 +243,9 @@ export const useBlockStore = create<BlockStore>((set, get) => ({
 
       const allBlocks = await getAllBlocks();
       const blocks: Block[] = [];
+
+      // Import getTradesByBlockWithOptions for combineLegGroups support
+      const { getTradesByBlockWithOptions } = await import("../db");
 
       // Convert each block to the appropriate UI type
       for (const dbBlock of allBlocks) {
@@ -236,8 +257,11 @@ export const useBlockStore = create<BlockStore>((set, get) => ({
             block = await convertGenericBlockToEquityCurveBlock(dbBlock);
           } else {
             // Convert Processed Block (trade-based)
+            // Use combineLegGroups setting from block config
+            const combineLegGroups = dbBlock.analysisConfig?.combineLegGroups ?? false;
+
             const [trades, dailyLogs, reportingTrades] = await Promise.all([
-              getTradesByBlock(dbBlock.id),
+              getTradesByBlockWithOptions(dbBlock.id, { combineLegGroups }),
               getDailyLogsByBlock(dbBlock.id),
               getReportingTradesByBlock(dbBlock.id),
             ]);
@@ -303,13 +327,31 @@ export const useBlockStore = create<BlockStore>((set, get) => ({
           : null;
 
       set({ blocks, activeBlockId, isLoading: false, isInitialized: true });
+    })();
+
+    try {
+      await Promise.race([loadingPromise, timeoutPromise]);
+      // Clear timeout on success to prevent unhandled rejection
+      if (timeoutRef.id) clearTimeout(timeoutRef.id);
     } catch (error) {
+      // Clear timeout to prevent duplicate errors
+      if (timeoutRef.id) clearTimeout(timeoutRef.id);
       console.error("Failed to load blocks:", error);
-      set({
-        error: error instanceof Error ? error.message : "Failed to load blocks",
-        isLoading: false,
-        isInitialized: true,
-      });
+
+      // Check if this was a timeout
+      if (error instanceof Error && error.message === "LOAD_TIMEOUT") {
+        set({
+          isStuck: true,
+          isLoading: false,
+          isInitialized: true,
+        });
+      } else {
+        set({
+          error: error instanceof Error ? error.message : "Failed to load blocks",
+          isLoading: false,
+          isInitialized: true,
+        });
+      }
     }
   },
 
@@ -462,8 +504,12 @@ export const useBlockStore = create<BlockStore>((set, get) => ({
         updatedBlock = await convertGenericBlockToEquityCurveBlock(dbBlock);
       } else {
         // Refresh Processed Block (trade-based)
+        // Use combineLegGroups setting from block config
+        const combineLegGroups = dbBlock.analysisConfig?.combineLegGroups ?? false;
+        const { getTradesByBlockWithOptions } = await import("../db");
+
         const [trades, dailyLogs, reportingTrades] = await Promise.all([
-          getTradesByBlock(id),
+          getTradesByBlockWithOptions(id, { combineLegGroups }),
           getDailyLogsByBlock(id),
           getReportingTradesByBlock(id),
         ]);
@@ -524,7 +570,11 @@ export const useBlockStore = create<BlockStore>((set, get) => ({
     }
   },
 
-  recalculateBlock: async (id: string) => {
+  recalculateBlock: async (
+    id: string,
+    onProgress?: (progress: SnapshotProgress) => void,
+    signal?: AbortSignal
+  ) => {
     try {
       console.log("Recalculating block:", id);
       set({ error: null });
@@ -541,8 +591,12 @@ export const useBlockStore = create<BlockStore>((set, get) => ({
         await get().refreshBlock(id);
       } else {
         // For trade-based blocks, recalculate all stats
+        // Use combineLegGroups setting from block config
+        const combineLegGroups = dbBlock.analysisConfig?.combineLegGroups ?? false;
+        const { getTradesByBlockWithOptions } = await import("../db");
+
         const [trades, dailyLogs, reportingTrades] = await Promise.all([
-          getTradesByBlock(id),
+          getTradesByBlockWithOptions(id, { combineLegGroups }),
           getDailyLogsByBlock(id),
           getReportingTradesByBlock(id),
         ]);
@@ -564,6 +618,19 @@ export const useBlockStore = create<BlockStore>((set, get) => ({
 
         // Update ProcessedBlock stats in database
         await updateBlockStats(id, portfolioStats, strategyStats);
+
+        // Build and cache performance snapshot for instant page loads
+        console.log("Building performance snapshot cache...");
+        const snapshot = await buildPerformanceSnapshot({
+          trades,
+          dailyLogs,
+          riskFreeRate: dbBlock.analysisConfig?.riskFreeRate || 2.0,
+          normalizeTo1Lot: false,
+          onProgress,
+          signal,
+        });
+        await storePerformanceSnapshotCache(id, snapshot);
+        console.log("Performance snapshot cached successfully");
 
         // Update lastModified timestamp
         await dbUpdateBlock(id, { lastModified: new Date() });
@@ -609,6 +676,51 @@ export const useBlockStore = create<BlockStore>((set, get) => ({
             ? error.message
             : "Failed to recalculate block",
       });
+    }
+  },
+
+  // Clear all data and reload (for recovery from corrupted state)
+  clearAllData: async () => {
+    try {
+      // Delete the main TradeBlocksDB
+      const { deleteDatabase } = await import("../db");
+      await deleteDatabase();
+
+      // Also delete the cache database if it exists
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const req = indexedDB.deleteDatabase("tradeblocks-cache");
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+          req.onblocked = () => resolve(); // Continue even if blocked
+        });
+      } catch {
+        // Ignore cache deletion errors
+      }
+
+      // Clear all tradeblocks-related localStorage entries
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (
+          key.startsWith("tradeblocks-") ||
+          key.startsWith("block-stats:") ||
+          key.startsWith("comparison:") ||
+          key.startsWith("performance:") ||
+          key.startsWith("current-") ||
+          key.startsWith("daily-log-") ||
+          key.startsWith("portfolio-")
+        )) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+
+      window.location.reload();
+    } catch (error) {
+      console.error("Failed to clear database:", error);
+      // Even if delete fails, try to reload - user can try again
+      window.location.reload();
     }
   },
 }));

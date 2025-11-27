@@ -1,7 +1,7 @@
-import { describe, it, expect } from '@jest/globals'
+import { describe, expect, it } from '@jest/globals'
 
-import { normalizeTradeToOneLot, normalizeTradesToOneLot } from '@/lib/utils/trade-normalization'
 import { Trade } from '@/lib/models/trade'
+import { normalizeTradeToOneLot, normalizeTradesToOneLot } from '@/lib/utils/trade-normalization'
 
 const baseTrade: Trade = {
   dateOpened: new Date('2024-01-01'),
@@ -74,5 +74,26 @@ describe('trade normalization helpers', () => {
     const firstCapital = (trades[0].fundsAtClose - trades[0].pl) / trades[0].numContracts
     expect(normalized[0].fundsAtClose).toBeCloseTo(firstCapital - 200)
     expect(normalized[1].fundsAtClose).toBeCloseTo(firstCapital - 200 + 200)
+  })
+
+  it('handles CombinedTrade by treating it as a single unit if numContracts represents strategy size', () => {
+    // Simulate a 1-lot Iron Condor (4 legs, 1 contract each)
+    // If combined, numContracts should be 1 (representing 1 IC).
+    // P/L = 100.
+    
+    const combinedTrade: Trade = {
+      ...baseTrade,
+      strategy: 'Iron Condor',
+      legs: 'Short Call | Long Call | Short Put | Long Put',
+      numContracts: 1, // 1 lot of IC
+      pl: 100,
+      marginReq: 1000,
+    }
+
+    const normalized = normalizeTradeToOneLot(combinedTrade)
+
+    // Should divide by 1, preserving the P/L of the 1-lot strategy
+    expect(normalized.pl).toBe(100)
+    expect(normalized.marginReq).toBe(1000)
   })
 })

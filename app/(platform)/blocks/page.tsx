@@ -14,10 +14,24 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useBlockStore, type Block, isTradeBasedBlock, isEquityCurveBlock } from "@/lib/stores/block-store";
-import { Activity, Calendar, ChevronDown, Download, FileSpreadsheet, Grid3X3, Info, List, Plus, Search, RotateCcw, TrendingUp } from "lucide-react";
-import React, { useState } from "react";
+import { Activity, AlertTriangle, Calendar, ChevronDown, Download, FileSpreadsheet, Grid3X3, Info, List, Plus, Search, RotateCcw, TrendingUp, Trash2 } from "lucide-react";
+import React, { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { ProgressDialog } from "@/components/progress-dialog";
+import type { SnapshotProgress } from "@/lib/services/performance-snapshot";
+import { waitForRender } from "@/lib/utils/async-helpers";
+import { useProgressDialog } from "@/hooks/use-progress-dialog";
 
 function BlockCard({
   block,
@@ -29,6 +43,7 @@ function BlockCard({
   const setActiveBlock = useBlockStore(state => state.setActiveBlock);
   const recalculateBlock = useBlockStore(state => state.recalculateBlock);
   const [isRecalculating, setIsRecalculating] = useState(false);
+  const progress = useProgressDialog();
 
   const formatDate = (date: Date) =>
     new Intl.DateTimeFormat("en-US", {
@@ -37,10 +52,26 @@ function BlockCard({
       year: "numeric",
     }).format(date);
 
+  const handleCancelCalculation = useCallback(() => {
+    progress.cancel();
+    setIsRecalculating(false);
+  }, [progress]);
+
   const handleRecalculate = async () => {
     setIsRecalculating(true);
+    const signal = progress.start("Starting...", 0);
+
+    // Allow React to render the dialog before starting computation
+    await waitForRender();
+
     try {
-      await recalculateBlock(block.id);
+      await recalculateBlock(
+        block.id,
+        (p: SnapshotProgress) => {
+          progress.update(p.step, p.percent);
+        },
+        signal
+      );
 
       // If this block is active, also refresh the performance store
       if (block.isActive) {
@@ -48,8 +79,13 @@ function BlockCard({
         await usePerformanceStore.getState().fetchPerformanceData(block.id);
       }
     } catch (error) {
-      console.error('Failed to recalculate block:', error);
+      if (error instanceof Error && error.name === "AbortError") {
+        console.log("Recalculation cancelled by user");
+      } else {
+        console.error('Failed to recalculate block:', error);
+      }
     } finally {
+      progress.finish();
       setIsRecalculating(false);
     }
   };
@@ -172,6 +208,15 @@ function BlockCard({
           </Button>
         </div>
       </CardContent>
+
+      {/* Progress dialog for recalculation */}
+      <ProgressDialog
+        open={progress.state?.open ?? false}
+        title="Recalculating Statistics"
+        step={progress.state?.step ?? ""}
+        percent={progress.state?.percent ?? 0}
+        onCancel={handleCancelCalculation}
+      />
     </Card>
   );
 }
@@ -186,6 +231,7 @@ function BlockRow({
   const setActiveBlock = useBlockStore(state => state.setActiveBlock);
   const recalculateBlock = useBlockStore(state => state.recalculateBlock);
   const [isRecalculating, setIsRecalculating] = useState(false);
+  const progress = useProgressDialog();
 
   const formatDate = (date: Date) =>
     new Intl.DateTimeFormat("en-US", {
@@ -194,18 +240,39 @@ function BlockRow({
       year: "numeric",
     }).format(date);
 
+  const handleCancelCalculation = useCallback(() => {
+    progress.cancel();
+    setIsRecalculating(false);
+  }, [progress]);
+
   const handleRecalculate = async () => {
     setIsRecalculating(true);
+    const signal = progress.start("Starting...", 0);
+
+    // Allow React to render the dialog before starting computation
+    await waitForRender();
+
     try {
-      await recalculateBlock(block.id);
+      await recalculateBlock(
+        block.id,
+        (p: SnapshotProgress) => {
+          progress.update(p.step, p.percent);
+        },
+        signal
+      );
 
       if (block.isActive) {
         const { usePerformanceStore } = await import('@/lib/stores/performance-store');
         await usePerformanceStore.getState().fetchPerformanceData(block.id);
       }
     } catch (error) {
-      console.error('Failed to recalculate block:', error);
+      if (error instanceof Error && error.name === "AbortError") {
+        console.log("Recalculation cancelled by user");
+      } else {
+        console.error('Failed to recalculate block:', error);
+      }
     } finally {
+      progress.finish();
       setIsRecalculating(false);
     }
   };
@@ -310,6 +377,15 @@ function BlockRow({
           <RotateCcw className={`h-4 w-4 ${isRecalculating ? 'animate-spin' : ''}`} />
         </Button>
       </div>
+
+      {/* Progress dialog for recalculation */}
+      <ProgressDialog
+        open={progress.state?.open ?? false}
+        title="Recalculating Statistics"
+        step={progress.state?.step ?? ""}
+        percent={progress.state?.percent ?? 0}
+        onCancel={handleCancelCalculation}
+      />
     </div>
   );
 }
@@ -325,8 +401,9 @@ const MINIMAL_TEMPLATE_CSV = `Date Opened,Time Opened,Opening Price,Legs,Premium
 export default function BlockManagementPage() {
   const blocks = useBlockStore(state => state.blocks);
   const isInitialized = useBlockStore(state => state.isInitialized);
+  const isStuck = useBlockStore(state => state.isStuck);
   const error = useBlockStore(state => state.error);
-  const loadBlocks = useBlockStore(state => state.loadBlocks);
+  const clearAllData = useBlockStore(state => state.clearAllData);
   const [isBlockDialogOpen, setIsBlockDialogOpen] = useState(false);
   const [isEquityCurveDialogOpen, setIsEquityCurveDialogOpen] = useState(false);
   const [isEquityCurveEditDialogOpen, setIsEquityCurveEditDialogOpen] = useState(false);
@@ -334,6 +411,7 @@ export default function BlockManagementPage() {
   const [selectedBlock, setSelectedBlock] = useState<Block | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // No need for useEffect here since AppSidebar handles loading
 
@@ -493,18 +571,42 @@ export default function BlockManagementPage() {
           </span>
         </div>
 
-        {error && (
+        {(error || isStuck) && (
           <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-            <p className="text-red-900 dark:text-red-100 font-medium">Error loading blocks</p>
-            <p className="text-red-700 dark:text-red-300 text-sm">{error}</p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => loadBlocks()}
-              className="mt-2"
-            >
-              Retry
-            </Button>
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-red-900 dark:text-red-100 font-medium">
+                  {isStuck ? "Loading appears stuck" : "Error loading blocks"}
+                </p>
+                <p className="text-red-700 dark:text-red-300 text-sm mt-1">
+                  {isStuck
+                    ? "The database may be corrupted or taking too long. You can try reloading or clearing all data."
+                    : error}
+                </p>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      // Reset state and retry
+                      window.location.reload();
+                    }}
+                  >
+                    <RotateCcw className="w-4 h-4 mr-2" />
+                    Reload Page
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setShowClearConfirm(true)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Clear Data & Reload
+                  </Button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -652,6 +754,28 @@ export default function BlockManagementPage() {
         block={isEquityCurveBlock(selectedBlock) ? selectedBlock : null}
         onSuccess={loadBlocks}
       />
+
+      {/* Confirmation dialog for clearing all data */}
+      <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Clear All Data?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete all your trading blocks and analyses.
+              You can re-import your data from Option Omega after clearing.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={clearAllData}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Clear & Reload
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { MatchReviewDialog } from "@/components/match-review-dialog";
+import { NoActiveBlock } from "@/components/no-active-block";
 import { ReconciliationMetrics } from "@/components/reconciliation-charts/ReconciliationMetrics";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,15 +33,22 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  getBlock,
   getReportingTradesByBlock,
-  getTradesByBlock,
+  getTradesByBlockWithOptions,
   updateBlock as updateProcessedBlock,
 } from "@/lib/db";
 import { StrategyAlignment } from "@/lib/models/strategy-alignment";
 import { useBlockStore } from "@/lib/stores/block-store";
 import { useComparisonStore } from "@/lib/stores/comparison-store";
 import { cn } from "@/lib/utils";
-import { Check, Loader2, Plus, Trash2 } from "lucide-react";
+import {
+  downloadCsv,
+  downloadJson,
+  generateExportFilename,
+  toCsvRow,
+} from "@/lib/utils/export-helpers";
+import { Check, Download, Loader2, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 interface SelectableStrategy {
@@ -163,8 +171,12 @@ export default function ComparisonBlocksPage() {
     const load = async () => {
       try {
         const blockId = activeBlock.id;
+        const processedBlock = await getBlock(blockId);
+        const combineLegGroups =
+          processedBlock?.analysisConfig?.combineLegGroups ?? false;
+
         const [trades, reportingTrades] = await Promise.all([
-          getTradesByBlock(blockId),
+          getTradesByBlockWithOptions(blockId, { combineLegGroups }),
           getReportingTradesByBlock(blockId),
         ]);
 
@@ -308,11 +320,13 @@ export default function ComparisonBlocksPage() {
     setMatchDialogAlignmentId(alignmentId);
   };
 
-  const activeMatchAlignment = matchDialogAlignmentId
-    ? comparisonData?.alignments.find(
-        (alignment) => alignment.alignmentId === matchDialogAlignmentId
-      ) ?? null
-    : null;
+  // Memoize to keep stable reference during loading/refreshes
+  const activeMatchAlignment = useMemo(() => {
+    if (!matchDialogAlignmentId) return null;
+    return comparisonData?.alignments.find(
+      (alignment) => alignment.alignmentId === matchDialogAlignmentId
+    ) ?? null;
+  }, [matchDialogAlignmentId, comparisonData?.alignments]);
 
   const summaryRows = useMemo(() => {
     // Only show comparison data if it matches the current block
@@ -417,6 +431,107 @@ export default function ComparisonBlocksPage() {
     );
   }, [summaryRows]);
 
+  // Export functions
+  const exportAsJson = () => {
+    if (!comparisonData || !activeBlock) return;
+
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      block: {
+        id: activeBlock.id,
+        name: activeBlock.name,
+      },
+      settings: {
+        normalizeTo1Lot,
+      },
+      summary: {
+        totalAlignments: comparisonData.alignments.length,
+        ...aggregateMatchStats,
+      },
+      alignments: comparisonData.alignments.map((alignment) => ({
+        alignmentId: alignment.alignmentId,
+        backtestedStrategy: alignment.backtestedStrategy,
+        reportedStrategy: alignment.reportedStrategy,
+        metrics: alignment.metrics,
+        backtestedTradeCount: alignment.backtestedTrades.length,
+        reportedTradeCount: alignment.reportedTrades.length,
+        sessionCount: alignment.sessions.length,
+      })),
+      unmappedStrategies: {
+        reported: comparisonData.unmappedReported,
+        backtested: comparisonData.unmappedBacktested,
+      },
+    };
+
+    downloadJson(
+      exportData,
+      generateExportFilename(activeBlock.name, "comparison", "json")
+    );
+  };
+
+  const exportAsCsv = () => {
+    if (!comparisonData || !activeBlock) return;
+
+    const lines: string[] = [];
+
+    // Metadata
+    lines.push("# Comparison Export");
+    lines.push(toCsvRow(["Block", activeBlock.name]));
+    lines.push(toCsvRow(["Exported", new Date().toISOString()]));
+    lines.push(toCsvRow(["Normalize to 1-Lot", normalizeTo1Lot]));
+    lines.push("");
+
+    // Summary
+    lines.push("# Summary");
+    lines.push(toCsvRow(["Metric", "Value"]));
+    lines.push(toCsvRow(["Total Alignments", comparisonData.alignments.length]));
+    lines.push(toCsvRow(["Auto Matched", aggregateMatchStats.autoMatched]));
+    lines.push(toCsvRow(["Manual Matched", aggregateMatchStats.manualMatched]));
+    lines.push(toCsvRow(["Unmatched Backtested", aggregateMatchStats.unmatchedBacktested]));
+    lines.push(toCsvRow(["Unmatched Reported", aggregateMatchStats.unmatchedReported]));
+    lines.push(toCsvRow(["Total Backtested", aggregateMatchStats.totalBacktested]));
+    lines.push(toCsvRow(["Total Reported", aggregateMatchStats.totalReported]));
+    lines.push(toCsvRow(["Total Sessions", aggregateMatchStats.totalSessions]));
+    lines.push(toCsvRow(["Matched Sessions", aggregateMatchStats.matchedSessions]));
+    lines.push(toCsvRow(["Unmatched Sessions", aggregateMatchStats.unmatchedSessions]));
+    lines.push("");
+
+    // Per-alignment metrics
+    lines.push("# Alignment Metrics");
+    lines.push(
+      toCsvRow([
+        "Backtested Strategy",
+        "Reported Strategy",
+        "Match Rate",
+        "BT Trades",
+        "RPT Trades",
+        "Sessions",
+        "Slippage/Contract",
+        "Size Variance",
+      ])
+    );
+    for (const alignment of comparisonData.alignments) {
+      const m = alignment.metrics;
+      lines.push(
+        toCsvRow([
+          alignment.backtestedStrategy,
+          alignment.reportedStrategy,
+          `${(m.matchRate * 100).toFixed(2)}%`,
+          alignment.backtestedTrades.length,
+          alignment.reportedTrades.length,
+          alignment.sessions.length,
+          m.slippagePerContract?.toFixed(2) ?? "N/A",
+          m.sizeVariance?.toFixed(2) ?? "N/A",
+        ])
+      );
+    }
+
+    downloadCsv(
+      lines,
+      generateExportFilename(activeBlock.name, "comparison", "csv")
+    );
+  };
+
   const handleSaveMatchOverrides = async (
     alignmentId: string,
     tradePairs: import("@/lib/models/strategy-alignment").TradePair[]
@@ -455,7 +570,7 @@ export default function ComparisonBlocksPage() {
     if (activeBlockId) {
       await refreshComparison(activeBlockId, nextAlignments, normalizeTo1Lot);
     }
-    setMatchDialogAlignmentId(null);
+    // Keep the dialog open so the user can navigate back to sessions
   };
 
   const persistAlignments = async (nextAlignments: StrategyAlignment[]) => {
@@ -568,17 +683,7 @@ export default function ComparisonBlocksPage() {
 
   if (!activeBlock) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <Card className="max-w-md text-center">
-          <CardHeader>
-            <CardTitle>No Active Block Selected</CardTitle>
-            <CardDescription>
-              Choose a block from the sidebar to align reporting strategies with
-              live trades.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
+      <NoActiveBlock description="Choose a block from the sidebar to align reporting strategies with live trades." />
     );
   }
 
@@ -1008,6 +1113,17 @@ export default function ComparisonBlocksPage() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <Separator orientation="vertical" className="h-8" />
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={exportAsCsv}>
+                    <Download className="mr-2 h-4 w-4" />
+                    CSV
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={exportAsJson}>
+                    <Download className="mr-2 h-4 w-4" />
+                    JSON
+                  </Button>
                 </div>
               </div>
             </div>
