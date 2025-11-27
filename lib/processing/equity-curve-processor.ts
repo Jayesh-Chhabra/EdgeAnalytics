@@ -6,13 +6,12 @@
  */
 
 import {
-  EquityCurveEntry,
-  EquityCurve,
-  EquityCurveUploadConfig,
-  EquityCurveProcessingResult,
-  DateFormat,
+    DateFormat,
+    EquityCurve,
+    EquityCurveEntry,
+    EquityCurveProcessingResult,
+    EquityCurveUploadConfig,
 } from '../models/equity-curve'
-import { ProcessingError } from '../models'
 import { CSVParser, ParseProgress } from './csv-parser'
 
 /**
@@ -27,7 +26,7 @@ export interface EquityCurveProcessingConfig {
 /**
  * Equity curve processing progress
  */
-export interface EquityCurveProcessingProgress extends ParseProgress {
+export interface EquityCurveProcessingProgress extends Omit<ParseProgress, 'stage'> {
   stage: 'reading' | 'parsing' | 'validating' | 'converting' | 'calculating' | 'completed'
   validEntries: number
   invalidEntries: number

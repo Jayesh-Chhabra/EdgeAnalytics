@@ -6,30 +6,30 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
+    HoverCard,
+    HoverCardContent,
+    HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
 } from "@/components/ui/select";
 import {
-  calculateCorrelationAnalytics,
-  calculateCorrelationMatrix,
-  CorrelationAlignment,
-  CorrelationDateBasis,
-  CorrelationMethod,
-  CorrelationMatrix,
-  CorrelationNormalization,
+    calculateCorrelationAnalytics,
+    calculateCorrelationMatrix,
+    CorrelationAlignment,
+    CorrelationDateBasis,
+    CorrelationMatrix,
+    CorrelationMethod,
+    CorrelationNormalization,
 } from "@/lib/calculations/correlation";
 import {
-  calculateEquityCurveCorrelationMatrix,
-  calculateEquityCurveCorrelationAnalytics,
+    calculateEquityCurveCorrelationAnalytics,
+    calculateEquityCurveCorrelationMatrix,
 } from "@/lib/calculations/equity-curve-correlation";
 import { getBlock, getTradesByBlockWithOptions, getEquityCurvesByBlock } from "@/lib/db";
 import { Trade } from "@/lib/models/trade";
@@ -45,7 +45,8 @@ import {
 } from "@/lib/utils/export-helpers";
 import { Download, HelpCircle, Info } from "lucide-react";
 import { useTheme } from "next-themes";
-import type { PlotData, Layout } from "plotly.js-dist-min";
+// @ts-expect-error - Plotly types are not fully compatible with TypeScript strict mode
+import type { Layout, PlotData } from "plotly.js-dist-min";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 export default function CorrelationMatrixPage() {
@@ -64,16 +65,7 @@ export default function CorrelationMatrixPage() {
     useState<CorrelationNormalization>("raw");
   const [dateBasis, setDateBasis] = useState<CorrelationDateBasis>("opened");
 
-  const analyticsContext = useMemo(
-    () =>
-      formatAnalyticsContext({
-        method,
-        alignment,
-        normalization,
-        dateBasis,
-      }),
-    [method, alignment, normalization, dateBasis]
-  );
+
 
   useEffect(() => {
     async function loadData() {
@@ -651,7 +643,8 @@ export default function CorrelationMatrixPage() {
                   {analytics.averageCorrelation.toFixed(2)}
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  {analytics.strategyCount} strategies · {analyticsContext}
+                  {analytics.strategyCount} strategies
+
                 </div>
               </div>
             </div>
@@ -699,36 +692,4 @@ function buildCorrelationCsvLines(
   return lines;
 }
 
-interface AnalyticsContextArgs {
-  method: CorrelationMethod;
-  alignment: CorrelationAlignment;
-  normalization: CorrelationNormalization;
-  dateBasis: CorrelationDateBasis;
-}
 
-function formatAnalyticsContext({
-  method,
-  alignment,
-  normalization,
-  dateBasis,
-}: AnalyticsContextArgs): string {
-  const methodLabel =
-    method === "pearson"
-      ? "Pearson"
-      : method === "spearman"
-      ? "Spearman"
-      : "Kendall";
-
-  const alignmentLabel = alignment === "shared" ? "Shared days" : "Zero-filled";
-
-  const normalizationLabel =
-    normalization === "raw"
-      ? "Raw P/L"
-      : normalization === "margin"
-      ? "Margin-normalized"
-      : "1-lot normalized";
-
-  const dateLabel = dateBasis === "opened" ? "Opened dates" : "Closed dates";
-
-  return [methodLabel, alignmentLabel, normalizationLabel, dateLabel].join(", ");
-}

@@ -3,8 +3,8 @@
  */
 
 import {
-  runMonteCarloSimulation,
-  type MonteCarloParams,
+    runMonteCarloSimulation,
+    type MonteCarloParams,
 } from "@/lib/calculations/monte-carlo";
 import { Trade } from "@/lib/models/trade";
 
@@ -43,7 +43,7 @@ function createTrade(overrides: Partial<Trade> = {}): Trade {
 describe("Worst-case modes comprehensive testing", () => {
   // Create realistic test data with varying contract sizes
   const tradesWithVaryingContracts: Trade[] = [
-    ...Array.from({ length: 20 }, (_, i) =>
+    ...Array.from({ length: 20 }, (v, i) =>
       createTrade({
         pl: 500,
         marginReq: 5000,
@@ -52,7 +52,7 @@ describe("Worst-case modes comprehensive testing", () => {
         fundsAtClose: 100000 + i * 500,
       })
     ),
-    ...Array.from({ length: 20 }, (_, i) =>
+    ...Array.from({ length: 20 }, (v, i) =>
       createTrade({
         pl: 2000,
         marginReq: 20000,
@@ -61,7 +61,7 @@ describe("Worst-case modes comprehensive testing", () => {
         fundsAtClose: 110000 + i * 2000,
       })
     ),
-    ...Array.from({ length: 20 }, (_, i) =>
+    ...Array.from({ length: 20 }, (v, i) =>
       createTrade({
         pl: 10000,
         marginReq: 100000, // Large max margin
@@ -158,7 +158,7 @@ describe("Worst-case modes comprehensive testing", () => {
   });
 
   describe("Daily mode (aggregated daily P&L)", () => {
-    const tradesWithDates: Trade[] = Array.from({ length: 60 }, (_, i) => {
+    const tradesWithDates: Trade[] = Array.from({ length: 60 }, (v, i) => {
       const date = new Date("2024-01-01");
       date.setDate(date.getDate() + Math.floor(i / 3)); // 3 trades per day
       return createTrade({
@@ -300,7 +300,7 @@ describe("Worst-case modes comprehensive testing", () => {
 
     it("should produce realistic results when margin equals capital", () => {
       // Edge case: max margin = starting capital
-      const edgeTrades: Trade[] = Array.from({ length: 30 }, (_, i) =>
+      const edgeTrades: Trade[] = Array.from({ length: 30 }, (v, i) =>
         createTrade({
           pl: i % 2 === 0 ? 1000 : -500,
           marginReq: 50000, // Half of capital

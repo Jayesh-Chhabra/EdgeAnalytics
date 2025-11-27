@@ -9,13 +9,13 @@ import { PortfolioStatsCalculator } from "@/lib/calculations/portfolio-stats";
 import { getEquityCurvesByBlock } from "@/lib/db";
 import { EquityCurveEntry } from "@/lib/models/equity-curve";
 import { PortfolioStats } from "@/lib/models/portfolio-stats";
-import { useBlockStore, isEquityCurveBlock } from "@/lib/stores/block-store";
+import { isEquityCurveBlock, useBlockStore } from "@/lib/stores/block-store";
 import {
-  AlertTriangle,
-  BarChart3,
-  Calendar,
-  Gauge,
-  TrendingUp,
+    AlertTriangle,
+    BarChart3,
+    Calendar,
+    Gauge,
+    TrendingUp,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -118,7 +118,7 @@ export default function EquityCurveStatsPage() {
   };
 
   const getStartingCapital = () => {
-    if (!isEquityCurveBlock(activeBlock)) return 0;
+    if (!activeBlock || !isEquityCurveBlock(activeBlock)) return 0;
 
     // Get starting capital from the first equity curve
     const firstCurve = activeBlock.equityCurves[0];
@@ -133,9 +133,7 @@ export default function EquityCurveStatsPage() {
     return portfolioStats?.winningTrades || 0;
   };
 
-  const getLosingDays = () => {
-    return portfolioStats?.losingTrades || 0;
-  };
+
 
   const getAvgDailyReturn = () => {
     if (equityCurveEntries.length === 0) return 0;
@@ -425,9 +423,9 @@ export default function EquityCurveStatsPage() {
         />
         <MetricCard
           title="Total Return"
-          value={portfolioStats?.totalReturn || 0}
+          value={portfolioStats ? (portfolioStats.netPl / portfolioStats.initialCapital) * 100 : 0}
           format="percentage"
-          isPositive={(portfolioStats?.totalReturn || 0) > 0}
+          isPositive={(portfolioStats?.netPl || 0) > 0}
           tooltip={{
             flavor: "Total percentage gain or loss",
             detailed:
@@ -494,7 +492,7 @@ export default function EquityCurveStatsPage() {
           value={portfolioStats?.avgWin && portfolioStats?.avgLoss
             ? Math.abs(portfolioStats.avgWin / portfolioStats.avgLoss)
             : 0}
-          format="decimal"
+          format="number"
           isPositive={true}
           tooltip={{
             flavor: "Average win divided by average loss (day-based)",
@@ -546,7 +544,7 @@ export default function EquityCurveStatsPage() {
         <MetricCard
           title="Sharpe Ratio"
           value={portfolioStats?.sharpeRatio || 0}
-          format="decimal"
+          format="number"
           isPositive={(portfolioStats?.sharpeRatio || 0) > 1}
           tooltip={{
             flavor: "Risk-adjusted returns",
@@ -557,7 +555,7 @@ export default function EquityCurveStatsPage() {
         <MetricCard
           title="Sortino Ratio"
           value={portfolioStats?.sortinoRatio || 0}
-          format="decimal"
+          format="number"
           isPositive={(portfolioStats?.sortinoRatio || 0) > 1}
           tooltip={{
             flavor: "Downside risk-adjusted returns",
@@ -568,7 +566,7 @@ export default function EquityCurveStatsPage() {
         <MetricCard
           title="Calmar Ratio"
           value={portfolioStats?.calmarRatio || 0}
-          format="decimal"
+          format="number"
           isPositive={(portfolioStats?.calmarRatio || 0) > 1}
           tooltip={{
             flavor: "Return relative to max drawdown",

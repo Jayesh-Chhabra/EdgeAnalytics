@@ -235,7 +235,7 @@ export interface GenericBlock {
 /**
  * Date alignment strategy for combining blocks with different date ranges
  */
-export type DateAlignmentStrategy = 'intersection' | 'union-fill-zero' | 'union-forward-fill'
+export type DateAlignmentStrategy = 'intersection' | 'union' | 'union-fill-zero' | 'union-forward-fill' | 'earliest-common' | 'latest-common'
 
 /**
  * Super Block for combining multiple blocks (trade-based + equity-curve)

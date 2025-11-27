@@ -15,11 +15,11 @@
  * This ensures our calculations match the legacy Python implementation exactly.
  */
 
-import { std, mean, min, max } from 'mathjs'
-import { Trade } from '../models/trade'
+import { max, mean, min, std } from 'mathjs'
 import { DailyLogEntry } from '../models/daily-log'
 import { EquityCurveEntry } from '../models/equity-curve'
-import { PortfolioStats, StrategyStats, AnalysisConfig } from '../models/portfolio-stats'
+import { AnalysisConfig, PortfolioStats, StrategyStats } from '../models/portfolio-stats'
+import { Trade } from '../models/trade'
 
 /**
  * Default analysis configuration
@@ -254,7 +254,7 @@ export class PortfolioStatsCalculator {
       : 0
 
     // Calculate max win/loss (in dollar terms)
-    const dailyPnLs = sortedEntries.map(e => e.accountValue * e.dailyReturnPct)
+    // const dailyPnLs = sortedEntries.map(e => e.accountValue * e.dailyReturnPct)
     const maxWin = profitableDays.length > 0
       ? max(profitableDays.map(e => e.accountValue * e.dailyReturnPct)) as number
       : 0

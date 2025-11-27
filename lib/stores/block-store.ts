@@ -6,14 +6,15 @@ import {
   getAllBlocks,
   getBlock,
   getDailyLogsByBlock,
-  getReportingTradesByBlock,
-  updateBlockStats,
   getEquityCurvesByBlock,
+  getReportingTradesByBlock,
+  getTradesByBlock,
+  updateBlockStats,
   getEquityCurveStrategiesByBlock,
   storePerformanceSnapshotCache,
 } from "../db";
 import { buildPerformanceSnapshot, SnapshotProgress } from "../services/performance-snapshot";
-import { ProcessedBlock, GenericBlock, isGenericBlock } from "../models/block";
+import { GenericBlock, isGenericBlock, ProcessedBlock } from "../models/block";
 import { StrategyAlignment } from "../models/strategy-alignment";
 
 // UI representation of a trade-based block
@@ -389,7 +390,7 @@ export const useBlockStore = create<BlockStore>((set, get) => ({
         id: "id" in blockData ? blockData.id : crypto.randomUUID(), // Use provided ID or generate new one
         created: new Date(),
         lastModified: new Date(),
-      };
+      } as Block;
 
       // Debug logging
       if (newBlock.isActive) {
@@ -451,7 +452,7 @@ export const useBlockStore = create<BlockStore>((set, get) => ({
       set((state) => ({
         blocks: state.blocks.map((block) =>
           block.id === id
-            ? { ...block, ...updates, lastModified: new Date() }
+            ? ({ ...block, ...updates, lastModified: new Date() } as Block)
             : block
         ),
       }));

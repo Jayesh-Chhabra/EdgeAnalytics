@@ -1,6 +1,6 @@
-import { EquityCurveEntry } from '@/lib/models/equity-curve'
-import { PortfolioStats } from '@/lib/models/portfolio-stats'
-import { std, mean } from 'mathjs'
+import { EquityCurveEntry } from '@/lib/models/equity-curve';
+import { PortfolioStats } from '@/lib/models/portfolio-stats';
+import { mean, std } from 'mathjs';
 
 export interface EquityCurveChartData {
   equityCurve: Array<{ date: string; equity: number; highWaterMark: number; tradeNumber: number }>
@@ -9,6 +9,17 @@ export interface EquityCurveChartData {
   monthlyReturnsPercent: Record<number, Record<number, number>>
   returnDistribution: number[]
   rollingMetrics: Array<{ date: string; winRate: number; sharpeRatio: number; profitFactor: number; volatility: number }>
+  streakData?: {
+    winDistribution: Record<number, number>
+    lossDistribution: Record<number, number>
+    statistics: {
+      maxWinStreak: number
+      maxLossStreak: number
+      avgWinStreak: number
+      avgLossStreak: number
+      currentStreak: number
+    }
+  }
 }
 
 export interface EquityCurveSnapshot {
@@ -48,13 +59,13 @@ export function calculateEquityCurveStats(
     : sortedEntries[0].accountValue / (1 + sortedEntries[0].dailyReturnPct)
 
   const finalCapital = sortedEntries[sortedEntries.length - 1].accountValue
-  const totalReturn = (finalCapital - initialCapital) / initialCapital
+  // const totalReturn = (finalCapital - initialCapital) / initialCapital
 
   // Calculate max drawdown from equity curve
   let maxDrawdown = 0
   let maxDrawdownPct = 0
   let highWaterMark = sortedEntries[0].accountValue
-  let drawdownDuration = 0
+
   let currentDrawdownStart: Date | null = null
   let maxDrawdownDuration = 0
 
@@ -88,7 +99,7 @@ export function calculateEquityCurveStats(
   const dailyVolatility = dailyReturns.length > 1
     ? std(dailyReturns, 'uncorrected') as number
     : 0
-  const annualizedVolatility = dailyVolatility * Math.sqrt(252)
+  // const annualizedVolatility = dailyVolatility * Math.sqrt(252)
 
   // Calculate Sharpe Ratio (annualized)
   const avgDailyReturn = mean(dailyReturns) as number
@@ -133,34 +144,31 @@ export function calculateEquityCurveStats(
 
   return {
     initialCapital,
-    finalCapital,
     totalPl: finalCapital - initialCapital,
-    totalReturn,
+    netPl: finalCapital - initialCapital,
     totalTrades: dailyReturns.length,
     winningTrades: winningDays,
     losingTrades: losingDays,
+    breakEvenTrades: dailyReturns.length - winningDays - losingDays,
     winRate,
     avgWin: avgWin * initialCapital,
     avgLoss: avgLoss * initialCapital,
-    largestWin: Math.max(...dailyReturns) * initialCapital,
-    largestLoss: Math.min(...dailyReturns) * initialCapital,
+    maxWin: Math.max(...dailyReturns) * initialCapital,
+    maxLoss: Math.min(...dailyReturns) * initialCapital,
     profitFactor,
     sharpeRatio,
     sortinoRatio,
     calmarRatio,
     maxDrawdown,
-    maxDrawdownPct,
-    maxDrawdownDuration,
-    volatility: annualizedVolatility,
-    returnOnMaxDrawdown: maxDrawdown > 0 ? (finalCapital - initialCapital) / maxDrawdown : 0,
-    avgMarginUsed: mean(sortedEntries.map(e => e.marginReq)) as number,
-    maxMarginUsed: Math.max(...sortedEntries.map(e => e.marginReq)),
-    // Trade-specific metrics not applicable to equity curves
+    avgDailyPl: mean(dailyReturns) * initialCapital,
     totalCommissions: 0,
-    avgDuration: 0,
-    avgWinDuration: 0,
-    avgLossDuration: 0,
-    expectancy: avgWin * winRate + avgLoss * (1 - winRate),
+    // Optional fields that were calculated but not part of interface or named differently
+    // volatility: annualizedVolatility, 
+    // maxDrawdownPct,
+    // maxDrawdownDuration,
+    // returnOnMaxDrawdown: maxDrawdown > 0 ? (finalCapital - initialCapital) / maxDrawdown : 0,
+    // avgMarginUsed: mean(sortedEntries.map(e => e.marginReq)) as number,
+    // maxMarginUsed: Math.max(...sortedEntries.map(e => e.marginReq)),
   }
 }
 
@@ -268,6 +276,74 @@ export function buildEquityCurveChartData(entries: EquityCurveEntry[]): EquityCu
     })
   }
 
+  // Calculate streaks
+  const winDistribution: Record<number, number> = {}
+  const lossDistribution: Record<number, number> = {}
+  let currentWinStreak = 0
+  let currentLossStreak = 0
+  let maxWinStreak = 0
+  let maxLossStreak = 0
+  const winStreaks: number[] = []
+  const lossStreaks: number[] = []
+
+  for (const entry of sortedEntries) {
+    const returnPct = entry.dailyReturnPct
+    
+    if (returnPct > 0) {
+      // Win
+      if (currentLossStreak > 0) {
+        lossDistribution[currentLossStreak] = (lossDistribution[currentLossStreak] || 0) + 1
+        lossStreaks.push(currentLossStreak)
+        currentLossStreak = 0
+      }
+      currentWinStreak++
+      if (currentWinStreak > maxWinStreak) maxWinStreak = currentWinStreak
+    } else if (returnPct < 0) {
+      // Loss
+      if (currentWinStreak > 0) {
+        winDistribution[currentWinStreak] = (winDistribution[currentWinStreak] || 0) + 1
+        winStreaks.push(currentWinStreak)
+        currentWinStreak = 0
+      }
+      currentLossStreak++
+      if (currentLossStreak > maxLossStreak) maxLossStreak = currentLossStreak
+    }
+    // Zero return doesn't break streak in this simple model, or we could treat it as neutral. 
+    // Usually 0 return breaks a streak or is ignored. Let's assume it breaks streak for now to be safe, 
+    // or arguably it shouldn't count. 
+    // If we want to be strict:
+    else {
+        if (currentWinStreak > 0) {
+            winDistribution[currentWinStreak] = (winDistribution[currentWinStreak] || 0) + 1
+            winStreaks.push(currentWinStreak)
+            currentWinStreak = 0
+        }
+        if (currentLossStreak > 0) {
+            lossDistribution[currentLossStreak] = (lossDistribution[currentLossStreak] || 0) + 1
+            lossStreaks.push(currentLossStreak)
+            currentLossStreak = 0
+        }
+    }
+  }
+
+  // Add final streaks
+  if (currentWinStreak > 0) {
+    winDistribution[currentWinStreak] = (winDistribution[currentWinStreak] || 0) + 1
+    winStreaks.push(currentWinStreak)
+  }
+  if (currentLossStreak > 0) {
+    lossDistribution[currentLossStreak] = (lossDistribution[currentLossStreak] || 0) + 1
+    lossStreaks.push(currentLossStreak)
+  }
+
+  const avgWinStreak = winStreaks.length > 0 ? mean(winStreaks) as number : 0
+  const avgLossStreak = lossStreaks.length > 0 ? mean(lossStreaks) as number : 0
+  
+  // Determine current streak
+  let currentStreak = 0
+  if (currentWinStreak > 0) currentStreak = currentWinStreak
+  else if (currentLossStreak > 0) currentStreak = -currentLossStreak
+
   return {
     equityCurve,
     drawdownData,
@@ -275,6 +351,17 @@ export function buildEquityCurveChartData(entries: EquityCurveEntry[]): EquityCu
     monthlyReturnsPercent,
     returnDistribution,
     rollingMetrics,
+    streakData: {
+      winDistribution,
+      lossDistribution,
+      statistics: {
+        maxWinStreak,
+        maxLossStreak,
+        avgWinStreak,
+        avgLossStreak,
+        currentStreak
+      }
+    }
   }
 }
 
@@ -298,32 +385,23 @@ export function buildEquityCurveSnapshot(
 function createEmptyStats(): PortfolioStats {
   return {
     initialCapital: 0,
-    finalCapital: 0,
     totalPl: 0,
-    totalReturn: 0,
+    netPl: 0,
     totalTrades: 0,
     winningTrades: 0,
     losingTrades: 0,
+    breakEvenTrades: 0,
     winRate: 0,
     avgWin: 0,
     avgLoss: 0,
-    largestWin: 0,
-    largestLoss: 0,
+    maxWin: 0,
+    maxLoss: 0,
     profitFactor: 0,
     sharpeRatio: 0,
     sortinoRatio: 0,
     calmarRatio: 0,
     maxDrawdown: 0,
-    maxDrawdownPct: 0,
-    maxDrawdownDuration: 0,
-    volatility: 0,
-    returnOnMaxDrawdown: 0,
-    avgMarginUsed: 0,
-    maxMarginUsed: 0,
+    avgDailyPl: 0,
     totalCommissions: 0,
-    avgDuration: 0,
-    avgWinDuration: 0,
-    avgLossDuration: 0,
-    expectancy: 0,
   }
 }
