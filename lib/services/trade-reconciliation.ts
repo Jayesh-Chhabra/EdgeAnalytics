@@ -1,14 +1,14 @@
+import {
+    calculateCorrelationMetrics,
+    calculatePairedTTest,
+    CorrelationMetrics,
+    MatchedPair as StatMatchedPair,
+    TTestResult,
+} from '@/lib/calculations/reconciliation-stats'
 import { getReportingTradesByBlock, getTradesByBlock } from '@/lib/db'
 import { ReportingTrade } from '@/lib/models/reporting-trade'
-import { StrategyAlignment, MatchOverrides, TradePair } from '@/lib/models/strategy-alignment'
+import { MatchOverrides, StrategyAlignment, TradePair } from '@/lib/models/strategy-alignment'
 import { Trade } from '@/lib/models/trade'
-import {
-  calculatePairedTTest,
-  calculateCorrelationMetrics,
-  TTestResult,
-  CorrelationMetrics,
-  MatchedPair as StatMatchedPair,
-} from '@/lib/calculations/reconciliation-stats'
 
 const MATCH_TOLERANCE_MS = 30 * 60 * 1000 // 30 minutes
 
@@ -368,8 +368,8 @@ function normalizeBacktestedTrade(trade: Trade): NormalizedTrade {
 function normalizeReportedTrade(trade: ReportingTrade): NormalizedTrade {
   const dateOpened = new Date(trade.dateOpened)
   const contracts = trade.numContracts || 1
-  const premiumPerContract = trade.initialPremium
-  const totalPremium = premiumPerContract * contracts
+  const totalPremium = trade.initialPremium
+  const premiumPerContract = contracts !== 0 ? totalPremium / contracts : totalPremium
 
   return {
     id: buildTradeId(trade.strategy, dateOpened, undefined, contracts, trade.pl),
@@ -475,6 +475,23 @@ function buildMatchResultFromPairs(
   return { pairs, unmatchedBacktested, unmatchedReported }
 }
 
+/**
+ * Extract option type from trade legs
+ * Helps match Calls with Calls and Puts with Puts in strategies with concurrent positions
+ */
+function extractOptionType(legs: string | undefined): 'call' | 'put' | 'mixed' | 'unknown' {
+  if (!legs) return 'unknown'
+  
+  const legString = legs.toLowerCase()
+  const hasCall = legString.includes(' c ') || legString.includes('call')
+  const hasPut = legString.includes(' p ') || legString.includes('put')
+  
+  if (hasCall && hasPut) return 'mixed'
+  if (hasCall) return 'call'
+  if (hasPut) return 'put'
+  return 'unknown'
+}
+
 function findBestWithinTolerance(
   reported: NormalizedTrade,
   candidates: NormalizedTrade[],
@@ -483,15 +500,33 @@ function findBestWithinTolerance(
     return undefined
   }
 
-  // Find the closest match by time within tolerance
+  // Extract option type from reported trade
+  const reportedType = extractOptionType(reported.legs)
+
+  // Find the closest match by time within tolerance, preferring matching option types
   let bestIdx = -1
   let bestDiff = Number.POSITIVE_INFINITY
+  let bestMatchesType = false
 
   candidates.forEach((candidate, idx) => {
     const diff = Math.abs(candidate.sortTime - reported.sortTime)
-    if (diff <= MATCH_TOLERANCE_MS && diff < bestDiff) {
+    if (diff > MATCH_TOLERANCE_MS) return
+
+    const candidateType = extractOptionType(candidate.legs)
+    const matchesType = reportedType === candidateType || 
+                       reportedType === 'unknown' || 
+                       candidateType === 'unknown'
+
+    // Prefer matching option types, then fall back to closest time
+    const shouldReplace =
+      bestIdx < 0 || // No match yet
+      (matchesType && !bestMatchesType) || // This matches type, current best doesn't
+      (matchesType === bestMatchesType && diff < bestDiff) // Same type-match status, closer time
+
+    if (shouldReplace) {
       bestIdx = idx
       bestDiff = diff
+      bestMatchesType = matchesType
     }
   })
 

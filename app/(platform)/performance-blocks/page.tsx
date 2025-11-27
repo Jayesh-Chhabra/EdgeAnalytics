@@ -25,6 +25,7 @@ import { HoldingDurationChart } from "@/components/performance-charts/holding-du
 import { MarginUtilizationChart } from "@/components/performance-charts/margin-utilization-chart";
 import { MFEMAEScatterChart } from "@/components/performance-charts/mfe-mae-scatter-chart";
 import { MonthlyReturnsChart } from "@/components/performance-charts/monthly-returns-chart";
+import { GroupedLegOutcomesChart } from "@/components/performance-charts/paired-leg-outcomes-chart";
 import { PremiumEfficiencyChart } from "@/components/performance-charts/premium-efficiency-chart";
 import { ReturnDistributionChart } from "@/components/performance-charts/return-distribution-chart";
 import { RiskEvolutionChart } from "@/components/performance-charts/risk-evolution-chart";
@@ -36,6 +37,8 @@ import { WinLossStreaksChart } from "@/components/performance-charts/win-loss-st
 
 // UI Components
 import { MultiSelect } from "@/components/multi-select";
+import { NoActiveBlock } from "@/components/no-active-block";
+import { PerformanceExportDialog } from "@/components/performance-export-dialog";
 import { SizingModeToggle } from "@/components/sizing-mode-toggle";
 import { Button } from "@/components/ui/button";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
@@ -151,18 +154,7 @@ export default function PerformanceBlocksPage() {
   // Show message if no active block
   if (!activeBlock) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center max-w-md">
-          <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="text-lg font-semibold mb-2">
-            No Active Block Selected
-          </h3>
-          <p className="text-muted-foreground mb-4">
-            Please select a block from the sidebar to view its performance
-            analysis.
-          </p>
-        </div>
-      </div>
+      <NoActiveBlock description="Please select a block from the sidebar to view its performance analysis." />
     );
   }
 
@@ -260,6 +252,7 @@ export default function PerformanceBlocksPage() {
             onValueChange={setSelectedStrategies}
             placeholder="All strategies"
             maxCount={3}
+            hideSelectAll
             className="w-full"
           />
         </div>
@@ -270,6 +263,9 @@ export default function PerformanceBlocksPage() {
           onCheckedChange={setNormalizeTo1Lot}
           title="Normalize to 1-lot"
         />
+        <div className="ml-auto">
+          <PerformanceExportDialog data={data} blockName={activeBlock.name} />
+        </div>
       </div>
 
       {/* Tabbed Interface */}
@@ -322,6 +318,7 @@ export default function PerformanceBlocksPage() {
         {/* Tab 3: Risk & Margin */}
         <TabsContent value="risk" className="space-y-6">
           <ROMTimelineChart />
+          <GroupedLegOutcomesChart />
           <MarginUtilizationChart />
           <RiskEvolutionChart />
           <HoldingDurationChart />

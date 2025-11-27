@@ -3,13 +3,19 @@
 import { MetricCard } from "@/components/metric-card";
 import { MetricSection } from "@/components/metric-section";
 import { MultiSelect } from "@/components/multi-select";
+import { NoActiveBlock } from "@/components/no-active-block";
 import { StrategyBreakdownTable } from "@/components/strategy-breakdown-table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SizingModeToggle } from "@/components/sizing-mode-toggle";
 import { PortfolioStatsCalculator } from "@/lib/calculations/portfolio-stats";
-import { getDailyLogsByBlock, getTradesByBlock } from "@/lib/db";
+import {
+  getBlock,
+  getDailyLogsByBlock,
+  getTradesByBlockWithOptions,
+  getPerformanceSnapshotCache,
+} from "@/lib/db";
 import {
   calculatePremiumEfficiencyPercent,
   computeTotalPremium,
@@ -20,13 +26,21 @@ import { Trade } from "@/lib/models/trade";
 import { buildPerformanceSnapshot } from "@/lib/services/performance-snapshot";
 import { useBlockStore } from "@/lib/stores/block-store";
 import {
+  downloadCsv,
+  downloadJson,
+  generateExportFilename,
+  toCsvRow,
+} from "@/lib/utils/export-helpers";
+import {
   AlertTriangle,
   BarChart3,
   Calendar,
+  Download,
   Gauge,
   Target,
   TrendingUp,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 
 // Strategy options will be dynamically generated from trades
@@ -92,21 +106,62 @@ export default function BlockStatsPage() {
   }, [activeBlock?.id, normalizeTo1Lot]);
 
   // Fetch trades and daily logs when active block changes
+  // Uses cached performance snapshot for instant load when available
   useEffect(() => {
     if (!activeBlock) {
       setTrades([]);
       setDailyLogs([]);
+      setFilteredTrades([]);
+      setPortfolioStats(null);
+      setStrategyStats({});
       setDataError(null);
       return;
     }
 
     const fetchData = async () => {
+      // Clear previous block data to avoid showing stale charts while loading
+      setTrades([]);
+      setDailyLogs([]);
+      setFilteredTrades([]);
+      setPortfolioStats(null);
+      setStrategyStats({});
       setIsLoadingData(true);
       setDataError(null);
 
       try {
+        const processedBlock = await getBlock(activeBlock.id);
+        const combineLegGroups =
+          processedBlock?.analysisConfig?.combineLegGroups ?? false;
+
+        // Check for cached snapshot first (for instant load with default settings)
+        // Only use cache if we're using default settings (no filters, default risk-free rate, no normalization)
+        const isDefaultView =
+          selectedStrategies.length === 0 &&
+          (parseFloat(riskFreeRate) || 2.0) === 2.0 &&
+          !normalizeTo1Lot;
+
+        if (isDefaultView) {
+          const cachedSnapshot = await getPerformanceSnapshotCache(activeBlock.id);
+          if (cachedSnapshot) {
+            // Use cached data directly - much faster!
+            setTrades(cachedSnapshot.filteredTrades);
+            setDailyLogs(cachedSnapshot.filteredDailyLogs);
+            setFilteredTrades(cachedSnapshot.filteredTrades);
+            setPortfolioStats(cachedSnapshot.portfolioStats);
+
+            // Calculate strategy stats from cached trades
+            const calculator = new PortfolioStatsCalculator({ riskFreeRate: 2.0 });
+            const strategies = calculator.calculateStrategyStats(cachedSnapshot.filteredTrades);
+            setStrategyStats(strategies);
+
+            setIsLoadingData(false);
+            return;
+          }
+        }
+
+        // Cache miss or filters applied - fetch data normally
         const [blockTrades, blockDailyLogs] = await Promise.all([
-          getTradesByBlock(activeBlock.id),
+          getTradesByBlockWithOptions(activeBlock.id, { combineLegGroups }),
           getDailyLogsByBlock(activeBlock.id),
         ]);
 
@@ -347,6 +402,200 @@ export default function BlockStatsPage() {
     }));
   };
 
+  // Export functions
+  const buildExportData = () => {
+    if (!portfolioStats || !activeBlock) return null;
+
+    return {
+      exportedAt: new Date().toISOString(),
+      block: {
+        id: activeBlock.id,
+        name: activeBlock.name,
+      },
+      filters: {
+        selectedStrategies: selectedStrategies.length > 0 ? selectedStrategies : "all",
+        riskFreeRate: parseFloat(riskFreeRate) || 2.0,
+        normalizeTo1Lot,
+      },
+      dateRange: getDateRange(),
+      portfolioStats: {
+        totalTrades: portfolioStats.totalTrades,
+        totalPl: portfolioStats.totalPl,
+        netPl: portfolioStats.netPl,
+        winningTrades: portfolioStats.winningTrades,
+        losingTrades: portfolioStats.losingTrades,
+        breakEvenTrades: portfolioStats.breakEvenTrades,
+        winRate: portfolioStats.winRate,
+        avgWin: portfolioStats.avgWin,
+        avgLoss: portfolioStats.avgLoss,
+        maxWin: portfolioStats.maxWin,
+        maxLoss: portfolioStats.maxLoss,
+        profitFactor: portfolioStats.profitFactor,
+        initialCapital: portfolioStats.initialCapital,
+        cagr: portfolioStats.cagr,
+        sharpeRatio: portfolioStats.sharpeRatio,
+        sortinoRatio: portfolioStats.sortinoRatio,
+        calmarRatio: portfolioStats.calmarRatio,
+        maxDrawdown: portfolioStats.maxDrawdown,
+        timeInDrawdown: portfolioStats.timeInDrawdown,
+        avgDailyPl: portfolioStats.avgDailyPl,
+        totalCommissions: portfolioStats.totalCommissions,
+        kellyPercentage: portfolioStats.kellyPercentage,
+        maxWinStreak: portfolioStats.maxWinStreak,
+        maxLossStreak: portfolioStats.maxLossStreak,
+        monthlyWinRate: portfolioStats.monthlyWinRate,
+        weeklyWinRate: portfolioStats.weeklyWinRate,
+      },
+      derivedMetrics: {
+        avgReturnOnMargin: getAvgReturnOnMargin(),
+        stdDevOfRoM: getStdDevOfRoM(),
+        bestTradeRoM: getBestTrade(),
+        worstTradeRoM: getWorstTrade(),
+        commissionVsPremium: commissionShare,
+        avgPremiumCapture: avgPremiumEfficiency,
+        avgHoldingHours: avgHoldingHours,
+        avgContracts: avgContracts,
+      },
+      strategyBreakdown: Object.values(strategyStats).map((stat) => ({
+        strategy: stat.strategyName,
+        trades: stat.tradeCount,
+        totalPl: stat.totalPl,
+        winRate: stat.winRate,
+        avgWin: stat.avgWin,
+        avgLoss: stat.avgLoss,
+        profitFactor: stat.profitFactor,
+      })),
+    };
+  };
+
+  const exportAsJson = () => {
+    const data = buildExportData();
+    if (!data || !activeBlock) return;
+
+    downloadJson(
+      data,
+      generateExportFilename(activeBlock.name, "block-stats", "json")
+    );
+  };
+
+  const exportAsCsv = () => {
+    if (!portfolioStats || !activeBlock) return;
+
+    const lines: string[] = [];
+
+    // Metadata section
+    lines.push("# Block Stats Export");
+    lines.push(toCsvRow(["Block", activeBlock.name]));
+    lines.push(toCsvRow(["Exported At", new Date().toISOString()]));
+    lines.push(toCsvRow(["Date Range", getDateRange()]));
+    lines.push(toCsvRow(["Risk-Free Rate", `${riskFreeRate}%`]));
+    lines.push(toCsvRow(["Normalize to 1-Lot", normalizeTo1Lot]));
+    lines.push(
+      toCsvRow([
+        "Selected Strategies",
+        selectedStrategies.length > 0 ? selectedStrategies.join("; ") : "All",
+      ])
+    );
+    lines.push("");
+
+    // Portfolio Stats section
+    lines.push("# Portfolio Statistics");
+    lines.push("Metric,Value");
+    lines.push(toCsvRow(["Total Trades", portfolioStats.totalTrades]));
+    lines.push(toCsvRow(["Total P/L", `$${portfolioStats.totalPl.toFixed(2)}`]));
+    lines.push(toCsvRow(["Net P/L", `$${portfolioStats.netPl.toFixed(2)}`]));
+    lines.push(
+      toCsvRow(["Win Rate", `${(portfolioStats.winRate * 100).toFixed(2)}%`])
+    );
+    lines.push(
+      toCsvRow(["Profit Factor", portfolioStats.profitFactor.toFixed(2)])
+    );
+    lines.push(
+      toCsvRow([
+        "Initial Capital",
+        `$${portfolioStats.initialCapital.toFixed(2)}`,
+      ])
+    );
+    lines.push(toCsvRow(["CAGR", `${(portfolioStats.cagr || 0).toFixed(2)}%`]));
+    lines.push(
+      toCsvRow(["Sharpe Ratio", (portfolioStats.sharpeRatio || 0).toFixed(2)])
+    );
+    lines.push(
+      toCsvRow(["Sortino Ratio", (portfolioStats.sortinoRatio || 0).toFixed(2)])
+    );
+    lines.push(
+      toCsvRow(["Calmar Ratio", (portfolioStats.calmarRatio || 0).toFixed(2)])
+    );
+    lines.push(
+      toCsvRow(["Max Drawdown", `${portfolioStats.maxDrawdown.toFixed(2)}%`])
+    );
+    lines.push(
+      toCsvRow([
+        "Time in Drawdown",
+        `${(portfolioStats.timeInDrawdown || 0).toFixed(2)}%`,
+      ])
+    );
+    lines.push(
+      toCsvRow([
+        "Kelly %",
+        `${(portfolioStats.kellyPercentage || 0).toFixed(2)}%`,
+      ])
+    );
+    lines.push(
+      toCsvRow(["Max Win Streak", portfolioStats.maxWinStreak || 0])
+    );
+    lines.push(
+      toCsvRow(["Max Loss Streak", portfolioStats.maxLossStreak || 0])
+    );
+    lines.push(
+      toCsvRow([
+        "Monthly Win Rate",
+        `${(portfolioStats.monthlyWinRate || 0).toFixed(2)}%`,
+      ])
+    );
+    lines.push(
+      toCsvRow([
+        "Weekly Win Rate",
+        `${(portfolioStats.weeklyWinRate || 0).toFixed(2)}%`,
+      ])
+    );
+    lines.push(
+      toCsvRow(["Avg Return on Margin", `${getAvgReturnOnMargin().toFixed(2)}%`])
+    );
+    lines.push(
+      toCsvRow(["Commission vs Premium", `${commissionShare.toFixed(2)}%`])
+    );
+    lines.push(
+      toCsvRow(["Avg Premium Capture", `${avgPremiumEfficiency.toFixed(2)}%`])
+    );
+    lines.push(toCsvRow(["Avg Holding (hrs)", avgHoldingHours]));
+    lines.push("");
+
+    // Strategy Breakdown section
+    lines.push("# Strategy Breakdown");
+    lines.push(
+      "Strategy,Trades,Total P/L,Win Rate,Avg Win,Avg Loss,Profit Factor"
+    );
+    Object.values(strategyStats).forEach((stat) => {
+      lines.push(
+        toCsvRow([
+          stat.strategyName,
+          stat.tradeCount,
+          `$${stat.totalPl.toFixed(2)}`,
+          `${(stat.winRate * 100).toFixed(2)}%`,
+          `$${stat.avgWin.toFixed(2)}`,
+          `$${stat.avgLoss.toFixed(2)}`,
+          stat.profitFactor.toFixed(2),
+        ])
+      );
+    });
+
+    downloadCsv(
+      lines,
+      generateExportFilename(activeBlock.name, "block-stats", "csv")
+    );
+  };
+
   // Show loading state
   if (!isInitialized || isLoading) {
     return (
@@ -362,17 +611,7 @@ export default function BlockStatsPage() {
   // Show message if no active block
   if (!activeBlock) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center max-w-md">
-          <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="text-lg font-semibold mb-2">
-            No Active Block Selected
-          </h3>
-          <p className="text-muted-foreground mb-4">
-            Please select a block from the sidebar to view its statistics.
-          </p>
-        </div>
-      </div>
+      <NoActiveBlock description="Please select a block from the sidebar to view its statistics." />
     );
   }
 
@@ -439,6 +678,26 @@ export default function BlockStatsPage() {
           onCheckedChange={setNormalizeTo1Lot}
           title="Normalize to 1-lot"
         />
+        <div className="flex gap-2 ml-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={exportAsCsv}
+            disabled={!portfolioStats}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={exportAsJson}
+            disabled={!portfolioStats}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            JSON
+          </Button>
+        </div>
       </div>
 
       {/* Basic Overview */}

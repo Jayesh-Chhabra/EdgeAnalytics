@@ -1,14 +1,21 @@
-import { create } from 'zustand'
-import { Trade } from '@/lib/models/trade'
 import { DailyLogEntry } from '@/lib/models/daily-log'
 import { EquityCurveEntry } from '@/lib/models/equity-curve'
 import { PortfolioStats } from '@/lib/models/portfolio-stats'
+import { Trade } from '@/lib/models/trade'
 import {
   buildPerformanceSnapshot,
-  SnapshotFilters,
-  SnapshotChartData
+  SnapshotChartData,
+  SnapshotFilters
 } from '@/lib/services/performance-snapshot'
 import { buildEquityCurveSnapshot, EquityCurveChartData } from '@/lib/calculations/equity-curve-stats'
+import {
+  deriveGroupedLegOutcomes,
+  GroupedLegOutcomes
+} from '@/lib/utils/performance-helpers'
+import { create } from 'zustand'
+
+// Re-export types from helper
+export type { GroupedLegEntry, GroupedLegOutcomes, GroupedLegSummary, GroupedOutcome } from '@/lib/utils/performance-helpers'
 
 export interface DateRange {
   from: Date | undefined
@@ -27,9 +34,11 @@ export interface TradeBasedPerformanceData extends SnapshotChartData {
   blockType: 'trade-based'
   trades: Trade[]
   allTrades: Trade[]
+  allRawTrades: Trade[]
   dailyLogs: DailyLogEntry[]
   allDailyLogs: DailyLogEntry[]
   portfolioStats: PortfolioStats | null
+  groupedLegOutcomes: GroupedLegOutcomes | null
 }
 
 export interface EquityCurvePerformanceData extends EquityCurveChartData {
@@ -88,6 +97,19 @@ function buildSnapshotFilters(dateRange: DateRange, strategies: string[]): Snaps
   return filters
 }
 
+// Selecting every available strategy should behave the same as selecting none.
+// This prevents "(Select All)" in the UI from acting like a restrictive filter
+// and keeps the output aligned with the default "All Strategies" view.
+function normalizeStrategyFilter(selected: string[], trades?: Trade[]): string[] {
+  if (!trades || selected.length === 0) return selected
+
+  const uniqueStrategies = new Set(trades.map(trade => trade.strategy || 'Unknown'))
+
+  // If the user picked every strategy we know about, drop the filter so the
+  // snapshot uses the full data set (identical to the default state).
+  return selected.length === uniqueStrategies.size ? [] : selected
+}
+
 export const usePerformanceStore = create<PerformanceStore>((set, get) => ({
   isLoading: false,
   error: null,
@@ -119,10 +141,18 @@ export const usePerformanceStore = create<PerformanceStore>((set, get) => ({
   },
 
   fetchPerformanceData: async (blockId: string) => {
-    set({ isLoading: true, error: null })
+    // Clear existing data to avoid showing the previous block's charts while loading the new one
+    set({ isLoading: true, error: null, data: null })
 
     try {
-      const { getBlock, getTradesByBlock, getDailyLogsByBlock, getEquityCurvesByBlock } = await import('@/lib/db')
+      const {
+        getTradesByBlockWithOptions,
+        getTradesByBlock,
+        getDailyLogsByBlock,
+        getEquityCurvesByBlock,
+        getBlock,
+        getPerformanceSnapshotCache
+      } = await import('@/lib/db')
       const { isGenericBlock } = await import('@/lib/models/block')
 
       // Get the block to determine its type
@@ -152,30 +182,76 @@ export const usePerformanceStore = create<PerformanceStore>((set, get) => ({
           isLoading: false
         })
       } else {
-        // Load trade-based data
-        const [trades, dailyLogs] = await Promise.all([
-          getTradesByBlock(blockId),
-          getDailyLogsByBlock(blockId)
-        ])
+        // Load trade-based data with caching and combineLegGroups support
+        const combineLegGroups = block.analysisConfig?.combineLegGroups ?? false
 
         const state = get()
-        const filters = buildSnapshotFilters(state.dateRange, state.selectedStrategies)
+        const riskFreeRate = 2.0
+
+        // Check if we can use cached snapshot (default view with no filters)
+        const isDefaultView =
+          !state.dateRange.from &&
+          !state.dateRange.to &&
+          state.selectedStrategies.length === 0 &&
+          !state.normalizeTo1Lot &&
+          riskFreeRate === 2.0 // explicit parity with block-stats page default
+
+        if (isDefaultView) {
+          const cachedSnapshot = await getPerformanceSnapshotCache(blockId)
+          if (cachedSnapshot) {
+            // Use cached data - much faster!
+            // Still need raw trades for groupedLegOutcomes
+            const rawTrades = await getTradesByBlock(blockId)
+            const groupedLegOutcomes = deriveGroupedLegOutcomes(rawTrades)
+
+            set({
+              data: {
+                blockType: 'trade-based',
+                trades: cachedSnapshot.filteredTrades,
+                allTrades: cachedSnapshot.filteredTrades,
+                allRawTrades: rawTrades,
+                dailyLogs: cachedSnapshot.filteredDailyLogs,
+                allDailyLogs: cachedSnapshot.filteredDailyLogs,
+                portfolioStats: cachedSnapshot.portfolioStats,
+                groupedLegOutcomes,
+                ...cachedSnapshot.chartData
+              },
+              isLoading: false
+            })
+            return
+          }
+        }
+
+        // Cache miss or filters applied - compute normally
+        const rawTrades = await getTradesByBlock(blockId)
+        const trades = combineLegGroups
+          ? await getTradesByBlockWithOptions(blockId, { combineLegGroups })
+          : rawTrades
+        const dailyLogs = await getDailyLogsByBlock(blockId)
+
+        const updatedNormalizedStrategies = normalizeStrategyFilter(state.selectedStrategies, trades)
+        const updatedFilters = buildSnapshotFilters(state.dateRange, updatedNormalizedStrategies)
         const snapshot = await buildPerformanceSnapshot({
           trades,
           dailyLogs,
-          filters,
+          filters: updatedFilters,
           riskFreeRate: 2.0,
           normalizeTo1Lot: state.normalizeTo1Lot
         })
+
+        const filteredRawTrades = filterTradesForSnapshot(rawTrades, updatedFilters)
+        const groupedLegOutcomes = deriveGroupedLegOutcomes(filteredRawTrades)
 
         set({
           data: {
             blockType: 'trade-based',
             trades: snapshot.filteredTrades,
             allTrades: trades,
+            allRawTrades: rawTrades,
             dailyLogs: snapshot.filteredDailyLogs,
             allDailyLogs: dailyLogs,
             portfolioStats: snapshot.portfolioStats,
+            groupedLegOutcomes,
             ...snapshot.chartData
           },
           isLoading: false
@@ -224,8 +300,9 @@ export const usePerformanceStore = create<PerformanceStore>((set, get) => ({
         } : state.data
       }))
     } else {
-      // For trade-based blocks, use existing logic
-      const filters = buildSnapshotFilters(dateRange, selectedStrategies)
+      // For trade-based blocks, use normalized filters and groupedLegOutcomes
+      const normalizedStrategies = normalizeStrategyFilter(selectedStrategies, data.allTrades)
+      const filters = buildSnapshotFilters(dateRange, normalizedStrategies)
 
       const snapshot = await buildPerformanceSnapshot({
         trades: data.allTrades,
@@ -235,12 +312,15 @@ export const usePerformanceStore = create<PerformanceStore>((set, get) => ({
         normalizeTo1Lot
       })
 
+      const filteredRawTrades = filterTradesForSnapshot(data.allRawTrades, filters)
+
       set(state => ({
         data: state.data && state.data.blockType === 'trade-based' ? {
           ...state.data,
           trades: snapshot.filteredTrades,
           dailyLogs: snapshot.filteredDailyLogs,
           portfolioStats: snapshot.portfolioStats,
+          groupedLegOutcomes: deriveGroupedLegOutcomes(filteredRawTrades),
           ...snapshot.chartData
         } : state.data
       }))
@@ -262,3 +342,23 @@ export const usePerformanceStore = create<PerformanceStore>((set, get) => ({
 
 // Re-export for existing unit tests that rely on chart processing helpers
 export { processChartData } from '@/lib/services/performance-snapshot'
+
+function filterTradesForSnapshot(trades: Trade[], filters: SnapshotFilters): Trade[] {
+  let filtered = [...trades]
+
+  if (filters.dateRange?.from || filters.dateRange?.to) {
+    filtered = filtered.filter(trade => {
+      const tradeDate = new Date(trade.dateOpened)
+      if (filters.dateRange?.from && tradeDate < filters.dateRange.from) return false
+      if (filters.dateRange?.to && tradeDate > filters.dateRange.to) return false
+      return true
+    })
+  }
+
+  if (filters.strategies && filters.strategies.length > 0) {
+    const allowed = new Set(filters.strategies)
+    filtered = filtered.filter(trade => allowed.has(trade.strategy || 'Unknown'))
+  }
+
+  return filtered
+}

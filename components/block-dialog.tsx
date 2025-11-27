@@ -38,12 +38,23 @@ import {
   addReportingTrades,
   addTrades,
   createBlock,
+  getBlock,
   deleteReportingTradesByBlock,
   updateDailyLogsForBlock,
   updateBlock as updateProcessedBlock,
   updateReportingTradesForBlock,
   updateTradesForBlock,
 } from "@/lib/db";
+import {
+  storeCombinedTradesCache,
+  deleteCombinedTradesCache,
+} from "@/lib/db/combined-trades-cache";
+import {
+  storePerformanceSnapshotCache,
+  deletePerformanceSnapshotCache,
+} from "@/lib/db/performance-snapshot-cache";
+import { buildPerformanceSnapshot } from "@/lib/services/performance-snapshot";
+import { combineAllLegGroupsAsync } from "@/lib/utils/combine-leg-groups";
 import { REQUIRED_DAILY_LOG_COLUMNS } from "@/lib/models/daily-log";
 import {
   REPORTING_TRADE_COLUMN_ALIASES,
@@ -53,6 +64,7 @@ import type { StrategyAlignment } from "@/lib/models/strategy-alignment";
 import {
   REQUIRED_TRADE_COLUMNS,
   TRADE_COLUMN_ALIASES,
+  type Trade,
 } from "@/lib/models/trade";
 import {
   DailyLogProcessingProgress,
@@ -71,12 +83,12 @@ import {
 } from "@/lib/processing/trade-processor";
 import { useBlockStore, Block, isTradeBasedBlock } from "@/lib/stores/block-store";
 import { useComparisonStore } from "@/lib/stores/comparison-store";
+import { cn } from "@/lib/utils";
 import {
   findMissingHeaders,
   normalizeHeaders,
   parseCsvLine,
 } from "@/lib/utils/csv-headers";
-import { cn } from "@/lib/utils";
 import {
   Activity,
   AlertCircle,
@@ -94,6 +106,10 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { ProgressDialog } from "@/components/progress-dialog";
+import type { SnapshotProgress } from "@/lib/services/performance-snapshot";
+import { waitForRender } from "@/lib/utils/async-helpers";
+import { useProgressDialog } from "@/hooks/use-progress-dialog";
 
 interface Block {
   id: string;
@@ -177,6 +193,7 @@ export function BlockDialog({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [setAsActive, setSetAsActive] = useState(true);
+  const [combineLegGroups, setCombineLegGroups] = useState(false);
   const [tradeLog, setTradeLog] = useState<FileUploadState>({
     file: null,
     status: "empty",
@@ -200,12 +217,20 @@ export function BlockDialog({
   };
 
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
-  const [processedFileName, setProcessedFileName] = useState<string | null>(null);
+  const [processedFileName, setProcessedFileName] = useState<string | null>(
+    null
+  );
   const [processingErrors, setProcessingErrors] = useState<string[]>([]);
   const [missingStrategyCount, setMissingStrategyCount] = useState(0);
   const [strategyOverride, setStrategyOverride] = useState("");
   const [pendingTradeResult, setPendingTradeResult] =
     useState<TradeProcessingResult | null>(null);
+
+  // Shared progress dialog controller (handles abort + clamped percent)
+  const progress = useProgressDialog();
+  const handleCancelCalculation = useCallback(() => {
+    progress.cancel();
+  }, [progress]);
 
   interface ProcessFilesResult {
     preview: PreviewData;
@@ -227,6 +252,7 @@ export function BlockDialog({
       setName("");
       setDescription("");
       setSetAsActive(true);
+      setCombineLegGroups(false);
       setTradeLog({ file: null, status: "empty" });
       setDailyLog({ file: null, status: "empty" });
       setReportingLog({ file: null, status: "empty" });
@@ -252,6 +278,17 @@ export function BlockDialog({
       setName(block.name);
       setDescription(block.description || "");
       setSetAsActive(block.isActive);
+
+      // Load combineLegGroups setting from ProcessedBlock
+      (async () => {
+        const { getBlock } = await import("@/lib/db");
+        const processedBlock = await getBlock(block.id);
+        if (processedBlock?.analysisConfig) {
+          setCombineLegGroups(
+            processedBlock.analysisConfig.combineLegGroups ?? false
+          );
+        }
+      })();
 
       setTradeLog({
         file: null,
@@ -904,7 +941,8 @@ export function BlockDialog({
       let processedPreview = previewData;
       let missingStrategies = missingStrategyCount;
       // Check if we need to process: either no preview exists OR the file changed
-      const needsProcessing = tradeLog.file &&
+      const needsProcessing =
+        tradeLog.file &&
         (!processedPreview?.trades || processedFileName !== tradeLog.file.name);
 
       if (mode === "new" && tradeLog.file) {
@@ -990,6 +1028,7 @@ export function BlockDialog({
             annualizationFactor: 252,
             confidenceLevel: 0.95,
             drawdownThreshold: 0.05,
+            combineLegGroups,
           },
         };
 
@@ -1020,6 +1059,74 @@ export function BlockDialog({
             newBlock.id,
             processedPreview.reporting.trades
           );
+        }
+
+        // Pre-calculate and cache performance snapshot for instant page loads
+        if (processedPreview.trades?.trades.length) {
+          // Show progress dialog BEFORE any heavy computation
+          setIsProcessing(false); // Hide old processing UI
+          const signal = progress.start("Starting...", 0);
+
+          // Allow React to render the dialog before starting computation
+          await waitForRender();
+
+          try {
+            let tradesToUse: Trade[] = processedPreview.trades.trades;
+
+            // If combining leg groups, do it with progress tracking
+            if (combineLegGroups) {
+              const combinedTrades = await combineAllLegGroupsAsync(
+                processedPreview.trades.trades,
+                {
+                  onProgress: (p) => {
+                    // Scale combine progress to 0-30%
+                    progress.update(
+                      `Combining: ${p.step}`,
+                      Math.floor(p.percent * 0.3)
+                    );
+                  },
+                  signal,
+                }
+              );
+              await storeCombinedTradesCache(newBlock.id, combinedTrades);
+              tradesToUse = combinedTrades;
+            }
+
+            // Build performance snapshot (30-95% if combining, 0-95% if not)
+            const snapshot = await buildPerformanceSnapshot({
+              trades: tradesToUse,
+              dailyLogs: processedPreview.dailyLogs?.entries,
+              riskFreeRate: 2.0,
+              normalizeTo1Lot: false,
+              onProgress: (p: SnapshotProgress) => {
+                const basePercent = combineLegGroups ? 30 : 0;
+                const scale = combineLegGroups ? 0.65 : 0.95;
+                progress.update(
+                  p.step,
+                  basePercent + Math.floor(p.percent * scale)
+                );
+              },
+              signal,
+            });
+
+            // Store to cache (95-100%)
+            progress.update("Saving to cache...", 96);
+            await waitForRender();
+            await storePerformanceSnapshotCache(newBlock.id, snapshot);
+          } catch (err) {
+            if (err instanceof Error && err.name === "AbortError") {
+              // User cancelled - skip caching, save still succeeds
+              console.log("Pre-calculation cancelled by user");
+              toast.info(
+                "Block created, but pre-calculation was cancelled. You can recalculate later for faster page loads."
+              );
+            } else {
+              throw err;
+            }
+          } finally {
+            progress.finish();
+            setIsProcessing(true); // Restore for remaining operations
+          }
         }
 
         // Calculate block stats for store
@@ -1191,6 +1298,133 @@ export function BlockDialog({
           lastModified: new Date(),
         };
 
+        // Get current block to check if combineLegGroups changed
+        const processedBlock = await getBlock(block.id);
+        const currentCombineLegGroups =
+          processedBlock?.analysisConfig?.combineLegGroups ?? false;
+
+        // Update analysisConfig if combineLegGroups changed
+        if (combineLegGroups !== currentCombineLegGroups) {
+          metadataUpdates.analysisConfig = {
+            ...processedBlock?.analysisConfig,
+            combineLegGroups,
+          };
+          // Clear cache since combining affects calculations
+          calculationOrchestrator.clearCache(block.id);
+
+          // Handle combined trades cache based on new setting
+          const { getTradesByBlock, getDailyLogsByBlock } = await import("@/lib/db");
+          const existingTrades = await getTradesByBlock(block.id);
+
+          if (combineLegGroups) {
+            // Enabling: pre-calculate and cache combined trades
+            if (existingTrades.length > 0) {
+              const existingDailyLogs = await getDailyLogsByBlock(block.id);
+
+              // Show progress dialog BEFORE any heavy computation
+              setIsProcessing(false); // Hide old processing UI
+              const signal = progress.start("Starting...", 0);
+
+              // Allow React to render the dialog before starting computation
+              await waitForRender();
+
+              try {
+                // Combine leg groups with progress (this was freezing UI before)
+                const combinedTrades = await combineAllLegGroupsAsync(
+                  existingTrades,
+                  {
+                    onProgress: (p) => {
+                      // Scale combine progress to 0-30%
+                      progress.update(
+                        `Combining: ${p.step}`,
+                        Math.floor(p.percent * 0.3)
+                      );
+                    },
+                    signal,
+                  }
+                );
+                await storeCombinedTradesCache(block.id, combinedTrades);
+
+                // Build performance snapshot (30-95%)
+                const snapshot = await buildPerformanceSnapshot({
+                  trades: combinedTrades,
+                  dailyLogs: existingDailyLogs,
+                  riskFreeRate: 2.0,
+                  normalizeTo1Lot: false,
+                  onProgress: (p: SnapshotProgress) => {
+                    // Scale snapshot progress to 30-95%
+                    progress.update(
+                      p.step,
+                      30 + Math.floor(p.percent * 0.65)
+                    );
+                  },
+                  signal,
+                });
+
+                // Store to cache (95-100%)
+                progress.update("Saving to cache...", 96);
+                await waitForRender();
+                await storePerformanceSnapshotCache(block.id, snapshot);
+              } catch (err) {
+                if (err instanceof Error && err.name === "AbortError") {
+                  console.log("Pre-calculation cancelled by user");
+                } else {
+                  throw err;
+                }
+              } finally {
+                progress.finish();
+                setIsProcessing(true); // Restore for remaining operations
+              }
+            }
+          } else {
+            // Disabling: delete the cached combined trades
+            await deleteCombinedTradesCache(block.id);
+
+            // Rebuild performance snapshot with raw trades
+            if (existingTrades.length > 0) {
+              const existingDailyLogs = await getDailyLogsByBlock(block.id);
+
+              // Use progress dialog for pre-calculation
+              setIsProcessing(false); // Hide old processing UI
+              const signal = progress.start("Starting...", 0);
+
+              // Allow React to render the dialog before starting computation
+              await waitForRender();
+
+              try {
+                const snapshot = await buildPerformanceSnapshot({
+                  trades: existingTrades,
+                  dailyLogs: existingDailyLogs,
+                  riskFreeRate: 2.0,
+                  normalizeTo1Lot: false,
+                  onProgress: (p: SnapshotProgress) => {
+                    // Scale to 0-95%
+                    progress.update(
+                      p.step,
+                      Math.floor(p.percent * 0.95)
+                    );
+                  },
+                  signal,
+                });
+
+                // Store to cache (95-100%)
+                progress.update("Saving to cache...", 96);
+                await waitForRender();
+                await storePerformanceSnapshotCache(block.id, snapshot);
+              } catch (err) {
+                if (err instanceof Error && err.name === "AbortError") {
+                  console.log("Pre-calculation cancelled by user");
+                } else {
+                  throw err;
+                }
+              } finally {
+                progress.finish();
+                setIsProcessing(true); // Restore for remaining operations
+              }
+            }
+          }
+        }
+
         // Track if we need to clear caches/comparison data
         let filesChanged = false;
 
@@ -1238,6 +1472,39 @@ export function BlockDialog({
 
           // Save trades to IndexedDB (replace all existing trades)
           await updateTradesForBlock(block.id, processedData.trades.trades);
+
+          // Update combined trades cache if setting is enabled
+          if (combineLegGroups) {
+            // Show progress dialog for combining (this can freeze UI with large files)
+            setIsProcessing(false); // Hide old processing UI
+            const signal = progress.start("Starting...", 0);
+            await waitForRender();
+
+            try {
+              const combinedTrades = await combineAllLegGroupsAsync(
+                processedData.trades.trades,
+                {
+                  onProgress: (p) => {
+                    progress.update(`Combining: ${p.step}`, p.percent);
+                  },
+                  signal,
+                }
+              );
+              await storeCombinedTradesCache(block.id, combinedTrades);
+            } catch (err) {
+              if (err instanceof Error && err.name === "AbortError") {
+                console.log("Combine leg groups cancelled by user");
+              } else {
+                throw err;
+              }
+            } finally {
+              progress.finish();
+              setIsProcessing(true); // Restore for remaining operations
+            }
+          } else {
+            // Ensure cache is cleared if trades were updated
+            await deleteCombinedTradesCache(block.id);
+          }
         }
 
         if (dailyLog.file && processedData?.dailyLogs) {
@@ -1323,6 +1590,58 @@ export function BlockDialog({
         // Clear calculation cache when any files are replaced or removed
         if (filesChanged) {
           calculationOrchestrator.clearCache(block.id);
+
+          // Rebuild performance snapshot cache with updated data
+          // Skip if we already rebuilt due to combineLegGroups change
+          if (combineLegGroups === currentCombineLegGroups) {
+            const { getTradesByBlockWithOptions, getDailyLogsByBlock } = await import("@/lib/db");
+
+            const trades = await getTradesByBlockWithOptions(block.id, { combineLegGroups });
+            const dailyLogs = await getDailyLogsByBlock(block.id);
+
+            if (trades.length > 0) {
+              // Use progress dialog for pre-calculation
+              setIsProcessing(false); // Hide old processing UI
+              const signal = progress.start("Starting...", 0);
+
+              // Allow React to render the dialog before starting computation
+              await waitForRender();
+
+              try {
+                const snapshot = await buildPerformanceSnapshot({
+                  trades,
+                  dailyLogs,
+                  riskFreeRate: 2.0,
+                  normalizeTo1Lot: false,
+                  onProgress: (p: SnapshotProgress) => {
+                    // Scale to 0-95%
+                    progress.update(
+                      p.step,
+                      Math.floor(p.percent * 0.95)
+                    );
+                  },
+                  signal,
+                });
+
+                // Store to cache (95-100%)
+                progress.update("Saving to cache...", 96);
+                await waitForRender();
+                await storePerformanceSnapshotCache(block.id, snapshot);
+              } catch (err) {
+                if (err instanceof Error && err.name === "AbortError") {
+                  console.log("Pre-calculation cancelled by user");
+                } else {
+                  throw err;
+                }
+              } finally {
+                progress.finish();
+                setIsProcessing(true); // Restore for remaining operations
+              }
+            } else {
+              // No trades, delete the cache
+              await deletePerformanceSnapshotCache(block.id);
+            }
+          }
         }
 
         // Refresh the block to get updated stats from IndexedDB
@@ -1472,7 +1791,9 @@ export function BlockDialog({
 
         <div
           className={`
-            relative border-2 border-dashed rounded-lg ${mode === "new" ? "p-3 sm:p-4" : "p-4 sm:p-5"} transition-all cursor-pointer
+            relative border-2 border-dashed rounded-lg ${
+              mode === "new" ? "p-3 sm:p-4" : "p-4 sm:p-5"
+            } transition-all cursor-pointer
             ${
               fileState.status === "dragover"
                 ? "border-primary bg-primary/5"
@@ -1655,8 +1976,18 @@ export function BlockDialog({
             </div>
           ) : (
             <div className="text-center">
-              <div className={`${mode === "new" ? "p-2" : "p-3"} bg-muted rounded-full w-fit mx-auto ${mode === "new" ? "mb-2" : "mb-4"}`}>
-                <Icon className={`${mode === "new" ? "w-5 h-5" : "w-6 h-6"} text-muted-foreground`} />
+              <div
+                className={`${
+                  mode === "new" ? "p-2" : "p-3"
+                } bg-muted rounded-full w-fit mx-auto ${
+                  mode === "new" ? "mb-2" : "mb-4"
+                }`}
+              >
+                <Icon
+                  className={`${
+                    mode === "new" ? "w-5 h-5" : "w-6 h-6"
+                  } text-muted-foreground`}
+                />
               </div>
               <p className={`font-medium ${mode === "new" ? "text-sm" : ""}`}>
                 {mode === "edit" && fileState.existingFileName
@@ -1665,7 +1996,11 @@ export function BlockDialog({
                   ? `Add ${label}`
                   : `Upload ${label}`}
               </p>
-              <p className={`text-sm text-muted-foreground ${mode === "new" ? "mt-0.5" : "mt-1"}`}>
+              <p
+                className={`text-sm text-muted-foreground ${
+                  mode === "new" ? "mt-0.5" : "mt-1"
+                }`}
+              >
                 Drag & drop your CSV file here or click to browse
               </p>
             </div>
@@ -1735,13 +2070,21 @@ export function BlockDialog({
           }
         }}
       >
-        <DialogContent className={cn(
-          "max-w-2xl lg:max-w-3xl max-h-[90vh] overflow-y-auto",
-          mode === "new" && "p-5 gap-3"
-        )}>
+        <DialogContent
+          className={cn(
+            "max-w-2xl lg:max-w-3xl max-h-[90vh] overflow-y-auto",
+            mode === "new" && "p-5 gap-3"
+          )}
+        >
           <DialogHeader className={mode === "new" ? "gap-1.5" : undefined}>
-            <DialogTitle className={mode === "new" ? "text-base" : undefined}>{getDialogTitle()}</DialogTitle>
-            <DialogDescription className={mode === "new" ? "text-xs" : undefined}>{getDialogDescription()}</DialogDescription>
+            <DialogTitle className={mode === "new" ? "text-base" : undefined}>
+              {getDialogTitle()}
+            </DialogTitle>
+            <DialogDescription
+              className={mode === "new" ? "text-xs" : undefined}
+            >
+              {getDialogDescription()}
+            </DialogDescription>
           </DialogHeader>
 
           <div className={mode === "new" ? "space-y-3" : "space-y-6"}>
@@ -1831,20 +2174,45 @@ export function BlockDialog({
             )}
 
             {/* Options */}
-            {mode === "new" && (
-              <div className="flex items-center space-x-2">
+            <div className="space-y-3">
+              {mode === "new" && (
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="set-active"
+                    checked={setAsActive}
+                    onCheckedChange={(checked) =>
+                      setSetAsActive(checked === true)
+                    }
+                  />
+                  <Label htmlFor="set-active">
+                    Set as active block after creation
+                  </Label>
+                </div>
+              )}
+
+              {/* Combine Leg Groups toggle */}
+              <div className="flex items-start space-x-2">
                 <Checkbox
-                  id="set-active"
-                  checked={setAsActive}
+                  id="combine-leg-groups"
+                  checked={combineLegGroups}
                   onCheckedChange={(checked) =>
-                    setSetAsActive(checked === true)
+                    setCombineLegGroups(checked === true)
                   }
                 />
-                <Label htmlFor="set-active">
-                  Set as active block after creation
-                </Label>
+                <div className="flex flex-col space-y-1">
+                  <Label
+                    htmlFor="combine-leg-groups"
+                    className="cursor-pointer"
+                  >
+                    Combine leg groups
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Merge trades/strategies with the same entry timestamp into
+                    single records.
+                  </p>
+                </div>
               </div>
-            )}
+            </div>
           </div>
 
           {mode === "edit" && <Separator />}
@@ -1924,6 +2292,15 @@ export function BlockDialog({
           </AlertDialogContent>
         </AlertDialog>
       )}
+
+      {/* Progress dialog for pre-calculation */}
+      <ProgressDialog
+        open={progress.state?.open ?? false}
+        title="Pre-calculating Statistics"
+        step={progress.state?.step ?? ""}
+        percent={progress.state?.percent ?? 0}
+        onCancel={handleCancelCalculation}
+      />
     </>
   );
 }

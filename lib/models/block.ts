@@ -1,5 +1,10 @@
-import { PerformanceMetrics, PortfolioStats, StrategyStats } from './portfolio-stats'
-import { StrategyAlignment } from './strategy-alignment'
+import {
+  PerformanceMetrics,
+  PortfolioStats,
+  StrategyStats,
+} from "./portfolio-stats";
+import { StrategyAlignment } from "./strategy-alignment";
+import { EquityCurve } from './equity-curve';
 // import { Trade } from './trade'
 // import { DailyLog } from './daily-log'
 
@@ -9,157 +14,158 @@ import { StrategyAlignment } from './strategy-alignment'
  */
 export interface ProcessedBlock {
   // Basic block metadata
-  id: string
-  name: string
-  description?: string
-  isActive: boolean
-  created: Date
-  lastModified: Date
+  id: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  created: Date;
+  lastModified: Date;
 
   // File metadata (pre-processing)
   tradeLog: {
-    fileName: string
-    fileSize: number
-    originalRowCount: number  // Raw CSV rows
-    processedRowCount: number  // Valid trades after cleaning
-    uploadedAt: Date
-  }
+    fileName: string;
+    fileSize: number;
+    originalRowCount: number; // Raw CSV rows
+    processedRowCount: number; // Valid trades after cleaning
+    uploadedAt: Date;
+  };
 
   dailyLog?: {
-    fileName: string
-    fileSize: number
-    originalRowCount: number
-    processedRowCount: number
-    uploadedAt: Date
-  }
+    fileName: string;
+    fileSize: number;
+    originalRowCount: number;
+    processedRowCount: number;
+    uploadedAt: Date;
+  };
 
   reportingLog?: {
-    fileName: string
-    fileSize: number
-    originalRowCount: number
-    processedRowCount: number
-    uploadedAt: Date
-  }
+    fileName: string;
+    fileSize: number;
+    originalRowCount: number;
+    processedRowCount: number;
+    uploadedAt: Date;
+  };
 
   // Processing status
-  processingStatus: 'pending' | 'processing' | 'completed' | 'error'
-  processingError?: string
-  lastProcessedAt?: Date
+  processingStatus: "pending" | "processing" | "completed" | "error";
+  processingError?: string;
+  lastProcessedAt?: Date;
 
   // Calculated statistics (computed from processed data)
-  portfolioStats?: PortfolioStats
-  strategyStats?: Record<string, StrategyStats>
-  performanceMetrics?: PerformanceMetrics
+  portfolioStats?: PortfolioStats;
+  strategyStats?: Record<string, StrategyStats>;
+  performanceMetrics?: PerformanceMetrics;
 
   // Strategy alignment metadata for comparison workflows
   strategyAlignment?: {
-    version: number
-    updatedAt: Date
-    mappings: StrategyAlignment[]
-  }
+    version: number;
+    updatedAt: Date;
+    mappings: StrategyAlignment[];
+  };
 
   // Data references (stored in IndexedDB)
   dataReferences: {
-    tradesStorageKey: string  // Key for trades in IndexedDB
-    dailyLogStorageKey?: string  // Key for daily log in IndexedDB
-    calculationsStorageKey?: string  // Key for cached calculations
-    reportingLogStorageKey?: string  // Key for reporting log in IndexedDB
-  }
+    tradesStorageKey: string; // Key for trades in IndexedDB
+    dailyLogStorageKey?: string; // Key for daily log in IndexedDB
+    calculationsStorageKey?: string; // Key for cached calculations
+    reportingLogStorageKey?: string; // Key for reporting log in IndexedDB
+  };
 
   // Analysis configuration
   analysisConfig: {
-    riskFreeRate: number
-    useBusinessDaysOnly: boolean
-    annualizationFactor: number
-    confidenceLevel: number
-  }
+    riskFreeRate: number;
+    useBusinessDaysOnly: boolean;
+    annualizationFactor: number;
+    confidenceLevel: number;
+    combineLegGroups?: boolean; // For strategies with multiple entries per timestamp
+  };
 }
 
 /**
  * Basic block interface (backward compatibility)
  */
 export interface Block {
-  id: string
-  name: string
-  description?: string
-  isActive: boolean
-  created: Date
-  lastModified: Date
+  id: string;
+  name: string;
+  description?: string;
+  isActive: boolean;
+  created: Date;
+  lastModified: Date;
   tradeLog: {
-    fileName: string
-    rowCount: number
-    fileSize: number
-  }
+    fileName: string;
+    rowCount: number;
+    fileSize: number;
+  };
   dailyLog?: {
-    fileName: string
-    rowCount: number
-    fileSize: number
-  }
+    fileName: string;
+    rowCount: number;
+    fileSize: number;
+  };
   reportingLog?: {
-    fileName: string
-    rowCount: number
-    fileSize: number
-  }
+    fileName: string;
+    rowCount: number;
+    fileSize: number;
+  };
   stats: {
-    totalPnL: number
-    winRate: number
-    totalTrades: number
-    avgWin: number
-    avgLoss: number
-  }
+    totalPnL: number;
+    winRate: number;
+    totalTrades: number;
+    avgWin: number;
+    avgLoss: number;
+  };
   strategyAlignment?: {
-    mappings: StrategyAlignment[]
-    updatedAt: Date
-  }
+    mappings: StrategyAlignment[];
+    updatedAt: Date;
+  };
 }
 
 /**
  * Block creation request (for new uploads)
  */
 export interface CreateBlockRequest {
-  name: string
-  description?: string
-  tradeLogFile: File
-  dailyLogFile?: File
-  analysisConfig?: Partial<ProcessedBlock['analysisConfig']>
+  name: string;
+  description?: string;
+  tradeLogFile: File;
+  dailyLogFile?: File;
+  analysisConfig?: Partial<ProcessedBlock["analysisConfig"]>;
 }
 
 /**
  * Block update request
  */
 export interface UpdateBlockRequest {
-  name?: string
-  description?: string
-  analysisConfig?: Partial<ProcessedBlock['analysisConfig']>
+  name?: string;
+  description?: string;
+  analysisConfig?: Partial<ProcessedBlock["analysisConfig"]>;
 }
 
 /**
  * File upload progress
  */
 export interface UploadProgress {
-  stage: 'uploading' | 'parsing' | 'processing' | 'calculating' | 'storing'
-  progress: number  // 0-100
-  message: string
+  stage: "uploading" | "parsing" | "processing" | "calculating" | "storing";
+  progress: number; // 0-100
+  message: string;
   details?: {
-    totalRows?: number
-    processedRows?: number
-    errors?: string[]
-  }
+    totalRows?: number;
+    processedRows?: number;
+    errors?: string[];
+  };
 }
 
 /**
  * Block processing result
  */
 export interface ProcessingResult {
-  success: boolean
-  block?: ProcessedBlock
-  errors?: string[]
-  warnings?: string[]
+  success: boolean;
+  block?: ProcessedBlock;
+  errors?: string[];
+  warnings?: string[];
   stats?: {
-    tradesProcessed: number
-    dailyEntriesProcessed: number
-    processingTimeMs: number
-  }
+    tradesProcessed: number;
+    dailyEntriesProcessed: number;
+    processingTimeMs: number;
+  };
 }
 
 /**
@@ -222,6 +228,7 @@ export interface GenericBlock {
     useBusinessDaysOnly: boolean
     annualizationFactor: number
     confidenceLevel: number
+    combineLegGroups?: boolean  // Not used for equity curves, but included for type compatibility
   }
 }
 
@@ -293,6 +300,7 @@ export interface SuperBlock {
     useBusinessDaysOnly: boolean
     annualizationFactor: number
     confidenceLevel: number
+    combineLegGroups?: boolean  // Not used for super blocks, but included for type compatibility
   }
 }
 

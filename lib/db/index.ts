@@ -13,7 +13,7 @@
 
 // Database configuration
 export const DB_NAME = "TradeBlocksDB";
-export const DB_VERSION = 3; // Updated for equity curves support
+export const DB_VERSION = 3; // Updated for equity curves and walk-forward analysis support
 
 // Object store names
 export const STORES = {
@@ -23,6 +23,7 @@ export const STORES = {
   CALCULATIONS: "calculations",
   REPORTING_LOGS: "reportingLogs",
   EQUITY_CURVES: "equityCurves", // New store for equity curve entries
+  WALK_FORWARD: "walkForwardAnalyses", // New store for walk-forward analyses
 } as const;
 
 // Index names
@@ -38,6 +39,7 @@ export const INDEXES = {
   EQUITY_CURVES_BY_BLOCK: "blockId",
   EQUITY_CURVES_BY_STRATEGY: "strategyName",
   EQUITY_CURVES_BY_DATE: "date",
+  WALK_FORWARD_BY_BLOCK: "blockId",
 } as const;
 
 /**
@@ -191,6 +193,17 @@ export async function initializeDatabase(): Promise<IDBDatabase> {
           ["blockId", "date"],
           { unique: false }
         );
+      }
+
+      // Create walk-forward analysis store
+      if (!db.objectStoreNames.contains(STORES.WALK_FORWARD)) {
+        const walkForwardStore = db.createObjectStore(STORES.WALK_FORWARD, {
+          keyPath: "id",
+        });
+        walkForwardStore.createIndex(INDEXES.WALK_FORWARD_BY_BLOCK, "blockId", {
+          unique: false,
+        });
+        walkForwardStore.createIndex("createdAt", "createdAt", { unique: false });
       }
 
       transaction.oncomplete = () => {
@@ -385,6 +398,7 @@ export {
   deleteTradesByBlock,
   getTradeCountByBlock,
   getTradesByBlock,
+  getTradesByBlockWithOptions,
   updateTradesForBlock,
 } from "./trades-store";
 export {
@@ -398,3 +412,24 @@ export {
   getEquityCurveStrategiesByBlock,
   updateEquityCurvesForBlock,
 } from "./equity-curves-store";
+export {
+  saveWalkForwardAnalysis,
+  getWalkForwardAnalysis,
+  getWalkForwardAnalysesByBlock,
+  deleteWalkForwardAnalysis,
+  deleteWalkForwardAnalysesByBlock,
+} from "./walk-forward-store";
+export {
+  storeCombinedTradesCache,
+  getCombinedTradesCache,
+  deleteCombinedTradesCache,
+  hasCombinedTradesCache,
+  invalidateBlockCaches,
+} from "./combined-trades-cache";
+export {
+  storePerformanceSnapshotCache,
+  getPerformanceSnapshotCache,
+  deletePerformanceSnapshotCache,
+  hasPerformanceSnapshotCache,
+} from "./performance-snapshot-cache";
+export type { CachedPerformanceSnapshot } from "./performance-snapshot-cache";
