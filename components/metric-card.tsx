@@ -2,9 +2,9 @@
 
 import { Card, CardContent } from "@/components/ui/card";
 import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
+    HoverCard,
+    HoverCardContent,
+    HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { cn } from "@/lib/utils";
 import { HelpCircle, TrendingDown, TrendingUp } from "lucide-react";
@@ -49,7 +49,7 @@ export function MetricCard({
           maximumFractionDigits: 0,
         }).format(val);
       case "percentage":
-        return `${val.toFixed(2)}%`;
+        return `${Number(val).toFixed(2)}%`;
       case "ratio":
         return val.toFixed(2);
       default:

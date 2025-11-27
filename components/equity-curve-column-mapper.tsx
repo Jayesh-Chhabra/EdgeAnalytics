@@ -1,27 +1,27 @@
 "use client";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { DateFormat } from "@/lib/models/equity-curve";
 import { EquityCurveProcessor } from "@/lib/processing/equity-curve-processor";
 import { AlertCircle, CheckCircle2, FileSpreadsheet, Info } from "lucide-react";
@@ -83,7 +83,7 @@ export function EquityCurveColumnMapper({
   const [strategyName, setStrategyName] = useState("");
   const [startingCapital, setStartingCapital] = useState("100000");
   const [dateFormat, setDateFormat] = useState<DateFormat>("YYYY-MM-DD");
-  const [skipHeaderRow, setSkipHeaderRow] = useState(true);
+  const [skipHeaderRow] = useState(true);
 
   // Column mapping
   const [columnMapping, setColumnMapping] = useState<Record<number, string>>({});

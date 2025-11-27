@@ -1,23 +1,22 @@
 "use client";
 
 import { BlockDialog } from "@/components/block-dialog";
-import { EquityCurveUploadDialog } from "@/components/equity-curve-upload-dialog";
 import { EquityCurveEditDialog } from "@/components/equity-curve-edit-dialog";
+import { EquityCurveUploadDialog } from "@/components/equity-curve-upload-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useBlockStore, type Block, isTradeBasedBlock, isEquityCurveBlock } from "@/lib/stores/block-store";
-import { Activity, Calendar, ChevronDown, Download, FileSpreadsheet, Grid3X3, Info, List, Plus, Search, RotateCcw, TrendingUp } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { isEquityCurveBlock, isTradeBasedBlock, useBlockStore, type Block } from "@/lib/stores/block-store";
+import { Activity, Calendar, ChevronDown, Download, FileSpreadsheet, Grid3X3, Info, List, Plus, RotateCcw, Search, TrendingUp } from "lucide-react";
 import React, { useState } from "react";
-import { toast } from "sonner";
 
 function BlockCard({
   block,
@@ -357,7 +356,7 @@ export default function BlockManagementPage() {
     setIsEquityCurveDialogOpen(true);
   };
 
-  const handleEquityCurveSuccess = (blockId: string) => {
+  const handleEquityCurveSuccess = () => {
     // Reload blocks to show the new generic block
     loadBlocks();
   };

@@ -1,16 +1,17 @@
 "use client";
 
+import { Trade } from "@/lib/models/trade";
 import { useBlockStore } from "@/lib/stores/block-store";
 import { usePerformanceStore } from "@/lib/stores/performance-store";
 import { format } from "date-fns";
 import {
-  AlertTriangle,
-  BarChart3,
-  CalendarIcon,
-  Gauge,
-  Loader2,
-  TrendingUp,
-  Zap,
+    AlertTriangle,
+    BarChart3,
+    CalendarIcon,
+    Gauge,
+    Loader2,
+    TrendingUp,
+    Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { DateRange } from "react-day-picker";
@@ -35,17 +36,17 @@ import { WinLossStreaksChart } from "@/components/performance-charts/win-loss-st
 
 // UI Components
 import { MultiSelect } from "@/components/multi-select";
+import { SizingModeToggle } from "@/components/sizing-mode-toggle";
 import { Button } from "@/components/ui/button";
 import { DateRangePicker } from "@/components/ui/date-range-picker";
 import { Label } from "@/components/ui/label";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
+    Popover,
+    PopoverContent,
+    PopoverTrigger,
 } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-import { SizingModeToggle } from "@/components/sizing-mode-toggle";
 
 const PERFORMANCE_STORAGE_KEY_PREFIX = "performance:normalizeTo1Lot:";
 
@@ -124,12 +125,12 @@ export default function PerformanceBlocksPage() {
 
   // Helper functions
   const getStrategyOptions = () => {
-    if (!data || data.allTrades.length === 0) return [];
+    if (!data || data.blockType !== 'trade-based' || !data.allTrades || data.allTrades.length === 0) return [];
 
     const uniqueStrategies = [
-      ...new Set(data.allTrades.map((trade) => trade.strategy || "Unknown")),
+      ...new Set(data.allTrades.map((trade: Trade) => trade.strategy || "Unknown")),
     ];
-    return uniqueStrategies.map((strategy) => ({
+    return uniqueStrategies.map((strategy: string) => ({
       label: strategy,
       value: strategy,
     }));
@@ -195,15 +196,19 @@ export default function PerformanceBlocksPage() {
   }
 
   // Show empty state if no data
-  if (!data || data.allTrades.length === 0) {
+  const hasTrades = data && data.blockType === 'trade-based' && data.allTrades && data.allTrades.length > 0;
+  const hasEquityCurve = data && data.blockType === 'equity-curve' && data.allEquityCurveEntries && data.allEquityCurveEntries.length > 0;
+
+  if (!data || (!hasTrades && !hasEquityCurve)) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center max-w-md">
           <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="text-lg font-semibold mb-2">No Trade Data</h3>
+          <h3 className="text-lg font-semibold mb-2">No Performance Data</h3>
           <p className="text-muted-foreground mb-4">
-            This block doesn&apos;t contain any trades yet. Upload trading data
-            to see performance analytics.
+            {data?.blockType === 'equity-curve' 
+              ? "This equity curve block has no entries." 
+              : "Requires a backtest with trades. Upload trading data to see performance analytics."}
           </p>
         </div>
       </div>

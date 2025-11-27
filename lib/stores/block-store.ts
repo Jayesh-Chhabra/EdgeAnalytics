@@ -1,18 +1,17 @@
 import { create } from "zustand";
 import { PortfolioStatsCalculator } from "../calculations/portfolio-stats";
 import {
-  deleteBlock as dbDeleteBlock,
-  updateBlock as dbUpdateBlock,
-  getAllBlocks,
-  getBlock,
-  getDailyLogsByBlock,
-  getReportingTradesByBlock,
-  getTradesByBlock,
-  updateBlockStats,
-  getEquityCurvesByBlock,
-  getEquityCurveStrategiesByBlock,
+    deleteBlock as dbDeleteBlock,
+    updateBlock as dbUpdateBlock,
+    getAllBlocks,
+    getBlock,
+    getDailyLogsByBlock,
+    getEquityCurvesByBlock,
+    getReportingTradesByBlock,
+    getTradesByBlock,
+    updateBlockStats,
 } from "../db";
-import { ProcessedBlock, GenericBlock, isGenericBlock } from "../models/block";
+import { GenericBlock, isGenericBlock, ProcessedBlock } from "../models/block";
 import { StrategyAlignment } from "../models/strategy-alignment";
 
 // UI representation of a trade-based block
@@ -347,7 +346,7 @@ export const useBlockStore = create<BlockStore>((set, get) => ({
         id: "id" in blockData ? blockData.id : crypto.randomUUID(), // Use provided ID or generate new one
         created: new Date(),
         lastModified: new Date(),
-      };
+      } as Block;
 
       // Debug logging
       if (newBlock.isActive) {
@@ -409,7 +408,7 @@ export const useBlockStore = create<BlockStore>((set, get) => ({
       set((state) => ({
         blocks: state.blocks.map((block) =>
           block.id === id
-            ? { ...block, ...updates, lastModified: new Date() }
+            ? ({ ...block, ...updates, lastModified: new Date() } as Block)
             : block
         ),
       }));

@@ -1,6 +1,5 @@
-import { PortfolioStats, StrategyStats, PerformanceMetrics } from './portfolio-stats'
+import { PerformanceMetrics, PortfolioStats, StrategyStats } from './portfolio-stats'
 import { StrategyAlignment } from './strategy-alignment'
-import { EquityCurve } from './equity-curve'
 // import { Trade } from './trade'
 // import { DailyLog } from './daily-log'
 
@@ -229,7 +228,7 @@ export interface GenericBlock {
 /**
  * Date alignment strategy for combining blocks with different date ranges
  */
-export type DateAlignmentStrategy = 'intersection' | 'union-fill-zero' | 'union-forward-fill'
+export type DateAlignmentStrategy = 'intersection' | 'union' | 'union-fill-zero' | 'union-forward-fill' | 'earliest-common' | 'latest-common'
 
 /**
  * Super Block for combining multiple blocks (trade-based + equity-curve)

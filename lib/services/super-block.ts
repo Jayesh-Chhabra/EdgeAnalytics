@@ -1,9 +1,9 @@
-import { Trade } from '@/lib/models/trade'
+import { calculateEquityCurveStats } from '@/lib/calculations/equity-curve-stats'
+import { DateAlignmentStrategy } from '@/lib/models/block'
 import { DailyLogEntry } from '@/lib/models/daily-log'
 import { EquityCurveEntry } from '@/lib/models/equity-curve'
-import { SuperBlock, DateAlignmentStrategy } from '@/lib/models/block'
 import { PortfolioStats } from '@/lib/models/portfolio-stats'
-import { calculateEquityCurveStats } from '@/lib/calculations/equity-curve-stats'
+import { Trade } from '@/lib/models/trade'
 
 export interface CombinedEquityCurve {
   date: Date
@@ -128,8 +128,8 @@ function tradesToEquityCurve(
       return {
         date: log.date,
         dailyReturnPct: dailyReturn,
-        marginReq: log.marginReq || 0,
-        accountValue: log.accountValue,
+        marginReq: 0,
+        accountValue: log.netLiquidity,
         strategyName: componentName,
       }
     })

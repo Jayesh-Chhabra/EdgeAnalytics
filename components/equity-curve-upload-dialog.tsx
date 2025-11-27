@@ -1,41 +1,40 @@
 "use client";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { EquityCurveColumnMapper } from "./equity-curve-column-mapper";
+import { Textarea } from "@/components/ui/textarea";
+import { addEquityCurveEntries, createBlock } from "@/lib/db";
+import { GenericBlock } from "@/lib/models/block";
+import {
+    EquityCurveProcessingResult,
+    EquityCurveUploadConfig,
+} from "@/lib/models/equity-curve";
 import { EquityCurveProcessor } from "@/lib/processing/equity-curve-processor";
 import {
-  EquityCurveUploadConfig,
-  EquityCurveProcessingResult,
-  EquityCurve,
-} from "@/lib/models/equity-curve";
-import { GenericBlock } from "@/lib/models/block";
-import { createBlock, addEquityCurveEntries } from "@/lib/db";
-import {
-  AlertCircle,
-  CheckCircle2,
-  FileSpreadsheet,
-  Loader2,
-  Plus,
-  Upload,
-  X,
+    AlertCircle,
+    CheckCircle2,
+    FileSpreadsheet,
+    Loader2,
+    Plus,
+    Upload,
+    X,
 } from "lucide-react";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
+import { EquityCurveColumnMapper } from "./equity-curve-column-mapper";
 
 interface EquityCurveUploadDialogProps {
   open: boolean;
@@ -320,13 +319,11 @@ export function EquityCurveUploadDialog({
 
               <EquityCurveColumnMapper
                 file={fileState.file}
-                onMappingComplete={handleMappingComplete}
+                onMappingComplete={(config) => handleMappingComplete(config as EquityCurveUploadConfig)}
                 onCancel={handleRemoveFile}
               />
             </div>
           )}
-
-          {/* Stage: Processing */}
           {stage === "processing" && (
             <div className="space-y-4">
               <Alert>
