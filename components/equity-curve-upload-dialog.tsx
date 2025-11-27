@@ -29,6 +29,7 @@ import {
     FileSpreadsheet,
     Loader2,
     Plus,
+    Trash2,
     Upload,
     X,
 } from "lucide-react";
@@ -42,12 +43,19 @@ interface EquityCurveUploadDialogProps {
   onSuccess?: (blockId: string) => void;
 }
 
-type UploadStage = "select-file" | "map-columns" | "processing" | "completed";
+type UploadStage = "details" | "select-file" | "map-columns" | "processing" | "review";
 
-interface FileState {
+interface ProcessedStrategy {
+  strategyName: string;
+  fileName: string;
+  fileSize: number;
+  config: EquityCurveUploadConfig;
+  result: EquityCurveProcessingResult;
+}
+
+interface CurrentFileState {
   file: File;
   config?: EquityCurveUploadConfig;
-  result?: EquityCurveProcessingResult;
 }
 
 export function EquityCurveUploadDialog({
@@ -57,8 +65,9 @@ export function EquityCurveUploadDialog({
 }: EquityCurveUploadDialogProps) {
   const [blockName, setBlockName] = useState("");
   const [description, setDescription] = useState("");
-  const [stage, setStage] = useState<UploadStage>("select-file");
-  const [fileState, setFileState] = useState<FileState | null>(null);
+  const [stage, setStage] = useState<UploadStage>("details");
+  const [currentFile, setCurrentFile] = useState<CurrentFileState | null>(null);
+  const [processedStrategies, setProcessedStrategies] = useState<ProcessedStrategy[]>([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [errors, setErrors] = useState<string[]>([]);
@@ -69,8 +78,9 @@ export function EquityCurveUploadDialog({
       if (!newOpen && !processing) {
         setBlockName("");
         setDescription("");
-        setStage("select-file");
-        setFileState(null);
+        setStage("details");
+        setCurrentFile(null);
+        setProcessedStrategies([]);
         setProgress(0);
         setErrors([]);
       }
@@ -89,7 +99,7 @@ export function EquityCurveUploadDialog({
       return;
     }
 
-    setFileState({ file });
+    setCurrentFile({ file });
     setStage("map-columns");
     toast.success("CSV file loaded. Map columns to continue.");
   }, []);
@@ -97,9 +107,14 @@ export function EquityCurveUploadDialog({
   // Handle column mapping completion
   const handleMappingComplete = useCallback(
     async (config: EquityCurveUploadConfig) => {
-      if (!fileState) return;
+      if (!currentFile) return;
 
-      setFileState((prev) => (prev ? { ...prev, config } : null));
+      // Check for duplicate strategy name
+      if (processedStrategies.some(s => s.strategyName === config.strategyName)) {
+        toast.error(`Strategy "${config.strategyName}" already exists. Please use a different name.`);
+        return;
+      }
+
       setStage("processing");
       setProcessing(true);
       setProgress(0);
@@ -113,15 +128,25 @@ export function EquityCurveUploadDialog({
           },
         });
 
-        const result = await processor.processFile(fileState.file, config);
+        const result = await processor.processFile(currentFile.file, config);
 
         if (result.errors.length > 0) {
           const errorMessages = result.errors.map((e) => `Row ${e.row}: ${e.message}`);
           setErrors(errorMessages);
+          toast.warning(`Processed with ${result.errors.length} errors`);
         }
 
-        setFileState((prev) => (prev ? { ...prev, result } : null));
-        setStage("completed");
+        // Add to processed strategies
+        setProcessedStrategies(prev => [...prev, {
+          strategyName: config.strategyName,
+          fileName: currentFile.file.name,
+          fileSize: currentFile.file.size,
+          config,
+          result,
+        }]);
+
+        setCurrentFile(null);
+        setStage("review");
         toast.success(
           `Processed ${result.validEntries} entries for strategy "${config.strategyName}"`
         );
@@ -134,12 +159,32 @@ export function EquityCurveUploadDialog({
         setProcessing(false);
       }
     },
-    [fileState]
+    [currentFile, processedStrategies]
   );
+
+  // Remove a processed strategy
+  const handleRemoveStrategy = useCallback((strategyName: string) => {
+    setProcessedStrategies(prev => prev.filter(s => s.strategyName !== strategyName));
+    toast.success(`Removed strategy "${strategyName}"`);
+  }, []);
+
+  // Start adding another strategy
+  const handleAddAnother = useCallback(() => {
+    setCurrentFile(null);
+    setStage("select-file");
+    setErrors([]);
+  }, []);
+
+  // Cancel current file upload
+  const handleCancelCurrentFile = useCallback(() => {
+    setCurrentFile(null);
+    setStage(processedStrategies.length > 0 ? "review" : "select-file");
+    setErrors([]);
+  }, [processedStrategies.length]);
 
   // Handle saving the generic block
   const handleSave = useCallback(async () => {
-    if (!fileState?.result || !fileState.config) return;
+    if (processedStrategies.length === 0) return;
 
     setProcessing(true);
     setProgress(0);
@@ -155,22 +200,23 @@ export function EquityCurveUploadDialog({
         name: blockName.trim(),
         description: description.trim() || undefined,
         isActive: false,
-        equityCurves: [
-          {
-            strategyName: fileState.config.strategyName,
-            fileName: fileState.file.name,
-            fileSize: fileState.file.size,
-            originalRowCount: fileState.result.totalRows,
-            processedRowCount: fileState.result.validEntries,
-            uploadedAt: now,
-            startingCapital: fileState.config.startingCapital,
-          },
-        ],
+        equityCurves: processedStrategies.map(strategy => ({
+          strategyName: strategy.strategyName,
+          fileName: strategy.fileName,
+          fileSize: strategy.fileSize,
+          originalRowCount: strategy.result.totalRows,
+          processedRowCount: strategy.result.validEntries,
+          uploadedAt: now,
+          startingCapital: strategy.config.startingCapital,
+        })),
         processingStatus: "completed",
         dataReferences: {
-          equityCurveStorageKeys: {
-            [fileState.config.strategyName]: `block_${timestamp}_equity_${fileState.config.strategyName}`,
-          },
+          equityCurveStorageKeys: Object.fromEntries(
+            processedStrategies.map(strategy => [
+              strategy.strategyName,
+              `block_${timestamp}_equity_${strategy.strategyName}`,
+            ])
+          ),
         },
         analysisConfig: {
           riskFreeRate: 0.05,
@@ -187,13 +233,15 @@ export function EquityCurveUploadDialog({
 
       console.log('Block saved, ID:', savedBlock.id);
 
-      // Add equity curve entries
-      console.log('Adding equity curve entries:', fileState.result.curve.entries.length, 'entries');
-      await addEquityCurveEntries(savedBlock.id, fileState.result.curve.entries);
+      // Add all equity curve entries
+      for (const strategy of processedStrategies) {
+        console.log(`Adding equity curve entries for ${strategy.strategyName}:`, strategy.result.curve.entries.length, 'entries');
+        await addEquityCurveEntries(savedBlock.id, strategy.result.curve.entries);
+      }
 
-      console.log('Equity curve entries saved successfully');
+      console.log('All equity curve entries saved successfully');
 
-      toast.success(`Generic block "${blockName}" created successfully!`);
+      toast.success(`Block "${blockName}" created with ${processedStrategies.length} ${processedStrategies.length === 1 ? 'strategy' : 'strategies'}!`);
 
       if (onSuccess) {
         console.log('Calling onSuccess callback');
@@ -209,16 +257,10 @@ export function EquityCurveUploadDialog({
     } finally {
       setProcessing(false);
     }
-  }, [fileState, blockName, description, handleOpenChange, onSuccess]);
+  }, [processedStrategies, blockName, description, handleOpenChange, onSuccess]);
 
-  // Remove file and start over
-  const handleRemoveFile = useCallback(() => {
-    setFileState(null);
-    setStage("select-file");
-    setErrors([]);
-  }, []);
-
-  const canSave = blockName.trim() && fileState?.result && !processing;
+  const canProceedToUpload = blockName.trim();
+  const canSave = blockName.trim() && processedStrategies.length > 0 && !processing;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -226,52 +268,66 @@ export function EquityCurveUploadDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5" />
-            Create Generic Block from Equity Curve
+            Create Equity Curve Block
           </DialogTitle>
           <DialogDescription>
-            Upload an equity curve CSV to create a generic block for portfolio analysis
+            Upload equity curve CSVs to create a block for portfolio analysis
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
           {/* Block Details */}
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="block-name">
-                Block Name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                id="block-name"
-                placeholder="e.g., Combined Strategies 2025"
-                value={blockName}
-                onChange={(e) => setBlockName(e.target.value)}
-                disabled={processing}
-              />
-            </div>
+          {stage === "details" && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="block-name">
+                  Block Name <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="block-name"
+                  placeholder="e.g., Combined Strategies 2025"
+                  value={blockName}
+                  onChange={(e) => setBlockName(e.target.value)}
+                  disabled={processing}
+                />
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="block-description">Description (Optional)</Label>
-              <Textarea
-                id="block-description"
-                placeholder="Brief description of this block..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={2}
-                disabled={processing}
-              />
-            </div>
-          </div>
+              <div className="space-y-2">
+                <Label htmlFor="block-description">Description (Optional)</Label>
+                <Textarea
+                  id="block-description"
+                  placeholder="Brief description of this block..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={2}
+                  disabled={processing}
+                />
+              </div>
 
-          <Separator />
+              <Button
+                onClick={() => setStage("select-file")}
+                disabled={!canProceedToUpload}
+                className="w-full"
+              >
+                Continue to Upload Strategies
+              </Button>
+            </div>
+          )}
 
           {/* Stage: File Selection */}
           {stage === "select-file" && (
             <div className="space-y-4">
+              {/* Block name display */}
+              <div className="rounded-lg bg-muted p-3">
+                <div className="text-sm">
+                  <span className="font-medium">Block:</span> {blockName}
+                </div>
+              </div>
+
               <div>
                 <h3 className="text-sm font-medium mb-2">Upload Equity Curve CSV</h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Select a CSV file containing equity curve data (Date, Daily Return %, Margin Req
-                  %)
+                  Select a CSV file containing equity curve data (Date, Daily Return %, Margin Req %)
                 </p>
               </div>
 
@@ -298,32 +354,44 @@ export function EquityCurveUploadDialog({
                   </div>
                 </div>
               </div>
+
+              {processedStrategies.length > 0 && (
+                <Button
+                  onClick={() => setStage("review")}
+                  variant="outline"
+                  className="w-full"
+                >
+                  Back to Review ({processedStrategies.length} {processedStrategies.length === 1 ? 'strategy' : 'strategies'})
+                </Button>
+              )}
             </div>
           )}
 
           {/* Stage: Column Mapping */}
-          {stage === "map-columns" && fileState && (
+          {stage === "map-columns" && currentFile && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-medium">Map CSV Columns</h3>
                   <p className="text-sm text-muted-foreground">
-                    Selected file: {fileState.file.name}
+                    Selected file: {currentFile.file.name}
                   </p>
                 </div>
-                <Button variant="ghost" size="sm" onClick={handleRemoveFile}>
+                <Button variant="ghost" size="sm" onClick={handleCancelCurrentFile}>
                   <X className="h-4 w-4 mr-2" />
-                  Remove File
+                  Cancel
                 </Button>
               </div>
 
               <EquityCurveColumnMapper
-                file={fileState.file}
+                file={currentFile.file}
                 onMappingComplete={(config) => handleMappingComplete(config as EquityCurveUploadConfig)}
-                onCancel={handleRemoveFile}
+                onCancel={handleCancelCurrentFile}
               />
             </div>
           )}
+
+          {/* Stage: Processing */}
           {stage === "processing" && (
             <div className="space-y-4">
               <Alert>
@@ -339,110 +407,109 @@ export function EquityCurveUploadDialog({
             </div>
           )}
 
-          {/* Stage: Completed */}
-          {stage === "completed" && fileState?.result && (
+          {/* Stage: Review Strategies */}
+          {stage === "review" && (
             <div className="space-y-4">
-              <Alert className="border-green-200 bg-green-50 dark:bg-green-950/20">
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
-                <AlertDescription>
-                  <div className="space-y-2">
-                    <p className="font-medium text-green-900 dark:text-green-100">
-                      Processing Complete
-                    </p>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <span className="text-muted-foreground">Valid Entries:</span>
-                        <Badge variant="secondary" className="ml-2">
-                          {fileState.result.validEntries}
-                        </Badge>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Skipped Rows:</span>
-                        <Badge variant="secondary" className="ml-2">
-                          {fileState.result.curve.skippedRows}
-                        </Badge>
-                      </div>
-                      <div>
-                        <span className="text-muted-foreground">Date Range:</span>
-                        <p className="text-xs mt-1">
-                          {fileState.result.curve.dateRangeStart.toLocaleDateString()} -{" "}
-                          {fileState.result.curve.dateRangeEnd.toLocaleDateString()}
+              <div>
+                <h3 className="text-sm font-medium mb-2">Strategies ({processedStrategies.length})</h3>
+                <p className="text-sm text-muted-foreground">
+                  Review and manage your equity curve strategies
+                </p>
+              </div>
+
+              {processedStrategies.length === 0 ? (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    No strategies added yet. Click "Add Strategy" to begin.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <div className="space-y-2">
+                  {processedStrategies.map((strategy) => (
+                    <div
+                      key={strategy.strategyName}
+                      className="flex items-center justify-between p-3 border rounded-lg"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <FileSpreadsheet className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <span className="font-medium truncate">{strategy.strategyName}</span>
+                          <Badge variant="secondary" className="text-xs">
+                            {strategy.result.validEntries} entries
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {strategy.fileName}
                         </p>
                       </div>
-                      <div>
-                        <span className="text-muted-foreground">Total Return:</span>
-                        <Badge
-                          variant={
-                            fileState.result.curve.totalReturn >= 0 ? "default" : "destructive"
-                          }
-                          className="ml-2"
-                        >
-                          {(fileState.result.curve.totalReturn * 100).toFixed(2)}%
-                        </Badge>
-                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveStrategy(strategy.strategyName)}
+                        disabled={processing}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
                     </div>
-                    {fileState.result.stats.sharpeRatio !== undefined && (
-                      <div className="text-sm">
-                        <span className="text-muted-foreground">Sharpe Ratio:</span>
-                        <span className="ml-2 font-medium">
-                          {fileState.result.stats.sharpeRatio.toFixed(3)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </AlertDescription>
-              </Alert>
-
-              <Button variant="outline" size="sm" onClick={handleRemoveFile} className="w-full">
-                <X className="h-4 w-4 mr-2" />
-                Start Over
-              </Button>
-            </div>
-          )}
-
-          {/* Errors */}
-          {errors.length > 0 && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                <p className="font-medium mb-2">Processing Errors:</p>
-                <ul className="text-sm space-y-1 max-h-32 overflow-y-auto">
-                  {errors.slice(0, 10).map((error, index) => (
-                    <li key={index} className="flex items-start gap-2">
-                      <span className="text-destructive">•</span>
-                      <span>{error}</span>
-                    </li>
                   ))}
-                  {errors.length > 10 && (
-                    <li className="text-xs text-muted-foreground">
-                      ... and {errors.length - 10} more errors
-                    </li>
-                  )}
-                </ul>
-              </AlertDescription>
-            </Alert>
+                </div>
+              )}
+
+              <Button
+                onClick={handleAddAnother}
+                variant="outline"
+                className="w-full"
+                disabled={processing}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Another Strategy
+              </Button>
+
+              {/* Error Display */}
+              {errors.length > 0 && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    <p className="font-medium mb-1">Processing Errors:</p>
+                    <ul className="list-disc list-inside text-xs space-y-1">
+                      {errors.slice(0, 5).map((error, i) => (
+                        <li key={i}>{error}</li>
+                      ))}
+                      {errors.length > 5 && (
+                        <li>... and {errors.length - 5} more errors</li>
+                      )}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
+            </div>
           )}
         </div>
 
-        <Separator />
-
         <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={processing}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave} disabled={!canSave}>
-            {processing ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              <>
-                <Plus className="h-4 w-4 mr-2" />
-                Create Block
-              </>
-            )}
-          </Button>
+          {stage === "details" && (
+            <Button variant="outline" onClick={() => handleOpenChange(false)}>
+              Cancel
+            </Button>
+          )}
+
+          {(stage === "select-file" || stage === "review") && (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => handleOpenChange(false)}
+                disabled={processing}
+              >
+                Cancel
+              </Button>
+              {processedStrategies.length > 0 && (
+                <Button onClick={handleSave} disabled={!canSave}>
+                  {processing ? "Creating..." : `Create Block (${processedStrategies.length} ${processedStrategies.length === 1 ? 'strategy' : 'strategies'})`}
+                </Button>
+              )}
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
