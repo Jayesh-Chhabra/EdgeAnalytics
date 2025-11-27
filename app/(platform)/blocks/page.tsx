@@ -403,6 +403,7 @@ export default function BlockManagementPage() {
   const isInitialized = useBlockStore(state => state.isInitialized);
   const isStuck = useBlockStore(state => state.isStuck);
   const error = useBlockStore(state => state.error);
+  const loadBlocks = useBlockStore(state => state.loadBlocks);
   const clearAllData = useBlockStore(state => state.clearAllData);
   const [isBlockDialogOpen, setIsBlockDialogOpen] = useState(false);
   const [isEquityCurveDialogOpen, setIsEquityCurveDialogOpen] = useState(false);
@@ -739,7 +740,7 @@ export default function BlockManagementPage() {
         open={isBlockDialogOpen}
         onOpenChange={setIsBlockDialogOpen}
         mode={dialogMode}
-        block={selectedBlock}
+        block={isTradeBasedBlock(selectedBlock) ? selectedBlock : null}
       />
 
       <EquityCurveUploadDialog

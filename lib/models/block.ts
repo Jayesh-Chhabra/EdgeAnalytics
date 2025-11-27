@@ -228,6 +228,7 @@ export interface GenericBlock {
     useBusinessDaysOnly: boolean
     annualizationFactor: number
     confidenceLevel: number
+    combineLegGroups?: boolean  // Not used for equity curves, but included for type compatibility
   }
 }
 
@@ -299,6 +300,7 @@ export interface SuperBlock {
     useBusinessDaysOnly: boolean
     annualizationFactor: number
     confidenceLevel: number
+    combineLegGroups?: boolean  // Not used for super blocks, but included for type compatibility
   }
 }
 
