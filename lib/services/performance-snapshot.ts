@@ -49,6 +49,17 @@ export interface SnapshotChartData {
   drawdownData: Array<{ date: string; drawdownPct: number }>
   dayOfWeekData: Array<{ day: string; count: number; avgPl: number; avgPlPercent: number }>
   returnDistribution: number[]
+  /**
+   * Per-trade inputs for ROM histogram; keeps margin context for exports/LLMs
+   */
+  returnDistributionDetails?: Array<{
+    tradeNumber: number
+    date: string
+    pl: number
+    marginReq: number
+    strategy?: string
+    rom: number
+  }>
   streakData: {
     winDistribution: Record<number, number>
     lossDistribution: Record<number, number>
@@ -61,7 +72,7 @@ export interface SnapshotChartData {
   }
   monthlyReturns: Record<number, Record<number, number>>
   monthlyReturnsPercent: Record<number, Record<number, number>>
-  tradeSequence: Array<{ tradeNumber: number; pl: number; rom: number; date: string }>
+  tradeSequence: Array<{ tradeNumber: number; pl: number; rom: number; date: string; marginReq?: number }>
   romTimeline: Array<{ date: string; rom: number }>
   rollingMetrics: Array<{ date: string; winRate: number; sharpeRatio: number; profitFactor: number; volatility: number }>
   volatilityRegimes: Array<{ date: string; openingVix?: number; closingVix?: number; pl: number; rom?: number }>
@@ -149,7 +160,13 @@ export async function buildPerformanceSnapshot(options: SnapshotOptions): Promis
       strategies.includes(trade.strategy || 'Unknown')
     )
 
-    filteredDailyLogs = undefined
+    // Note: We intentionally keep filteredDailyLogs available here (not setting to undefined).
+    // While equity curve calculations use useFundsAtClose=false when strategies are filtered
+    // (to avoid data leakage from other strategies' fundsAtClose values), we still need
+    // daily logs for:
+    // 1. Custom field joining during trade enrichment (e.g., daily.vixOpen)
+    // 2. Monthly returns % calculations (which have appropriate fallbacks)
+    // The useFundsAtClose flag (line 123) already handles the equity curve concern.
   }
 
   checkCancelled(signal)
@@ -210,9 +227,30 @@ export async function processChartData(
   checkCancelled(signal)
   await yieldToMain()
 
-  const returnDistribution = trades
-    .filter(trade => trade.marginReq && trade.marginReq > 0)
-    .map(trade => (trade.pl / trade.marginReq!) * 100)
+  const romTrades = trades
+    .map((trade, index) => {
+      const marginReq = getFiniteNumber(trade.marginReq) ?? 0
+      const rom = marginReq > 0 ? (trade.pl / marginReq) * 100 : undefined
+
+      return {
+        tradeNumber: index + 1,
+        date: new Date(trade.dateOpened).toISOString(),
+        pl: trade.pl,
+        marginReq,
+        strategy: trade.strategy,
+        rom
+      }
+    })
+    .filter(trade => trade.rom !== undefined) as Array<{
+      tradeNumber: number
+      date: string
+      pl: number
+      marginReq: number
+      strategy?: string
+      rom: number
+    }>
+
+  const returnDistribution = romTrades.map(trade => trade.rom)
 
   const streakData = calculateStreakData(trades)
 
@@ -234,12 +272,16 @@ export async function processChartData(
   checkCancelled(signal)
   await yieldToMain()
 
-  const tradeSequence = trades.map((trade, index) => ({
-    tradeNumber: index + 1,
-    pl: trade.pl,
-    rom: trade.marginReq && trade.marginReq > 0 ? (trade.pl / trade.marginReq) * 100 : 0,
-    date: new Date(trade.dateOpened).toISOString()
-  }))
+  const tradeSequence = trades.map((trade, index) => {
+    const marginReq = getFiniteNumber(trade.marginReq) ?? 0
+    return {
+      tradeNumber: index + 1,
+      pl: trade.pl,
+      rom: marginReq > 0 ? (trade.pl / marginReq) * 100 : 0,
+      marginReq,
+      date: new Date(trade.dateOpened).toISOString()
+    }
+  })
 
   // Yield after trade sequence
   checkCancelled(signal)
@@ -316,6 +358,7 @@ export async function processChartData(
     drawdownData,
     dayOfWeekData,
     returnDistribution,
+    returnDistributionDetails: romTrades,
     streakData,
     monthlyReturns,
     monthlyReturnsPercent,
@@ -345,18 +388,52 @@ function buildEquityAndDrawdown(
   }
 
   const equityCurve = calculateEquityCurveFromTrades(trades, useFundsAtClose)
-
-  const drawdownData = equityCurve.map(point => {
-    const { equity, highWaterMark, date } = point
-    if (!isFinite(highWaterMark) || highWaterMark === 0) {
-      return { date, drawdownPct: 0 }
-    }
-
-    const drawdownPct = ((equity - highWaterMark) / highWaterMark) * 100
-    return { date, drawdownPct }
-  })
+  const drawdownData = calculateDailyDrawdownFromEquityCurve(equityCurve)
 
   return { equityCurve, drawdownData }
+}
+
+function calculateDailyDrawdownFromEquityCurve(
+  equityCurve: SnapshotChartData['equityCurve']
+): SnapshotChartData['drawdownData'] {
+  if (!equityCurve || equityCurve.length === 0) {
+    return []
+  }
+
+  // Collapse multiple trades on the same calendar day into a single end-of-day point
+  const dailyPoints: Array<{ date: string; equity: number }> = []
+
+  // Seed the high water mark from the initial curve point so day-one drops are preserved
+  let highWaterMark = Number.isFinite(equityCurve[0].highWaterMark)
+    ? equityCurve[0].highWaterMark
+    : equityCurve[0].equity
+
+  equityCurve.forEach(point => {
+    const dayKey = point.date.slice(0, 10) // YYYY-MM-DD
+    const lastPoint = dailyPoints[dailyPoints.length - 1]
+
+    if (lastPoint && lastPoint.date.slice(0, 10) === dayKey) {
+      // Overwrite with the latest equity for that day (end-of-day)
+      dailyPoints[dailyPoints.length - 1] = { date: point.date, equity: point.equity }
+    } else {
+      dailyPoints.push({ date: point.date, equity: point.equity })
+    }
+  })
+
+  return dailyPoints.map(point => {
+    if (!isFinite(highWaterMark) || point.equity > highWaterMark) {
+      highWaterMark = point.equity
+    }
+
+    const drawdownPct = highWaterMark > 0
+      ? ((point.equity - highWaterMark) / highWaterMark) * 100
+      : 0
+
+    return {
+      date: point.date,
+      drawdownPct
+    }
+  })
 }
 
 function buildEquityAndDrawdownFromDailyLogs(

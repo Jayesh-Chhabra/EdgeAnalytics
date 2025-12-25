@@ -2,6 +2,7 @@
 
 import {
   IconChartHistogram,
+  IconDatabase,
   IconGauge,
   IconLayoutDashboard,
   IconLink,
@@ -10,6 +11,7 @@ import {
   IconSparkles,
   IconStack2,
   IconTimelineEvent,
+  IconTrendingDown,
 } from "@tabler/icons-react";
 import { Blocks } from "lucide-react";
 import Link from "next/link";
@@ -36,6 +38,11 @@ const navData = {
       title: "Block Management",
       href: "/blocks",
       icon: IconStack2,
+    },
+    {
+      title: "Static Datasets",
+      href: "/static-datasets",
+      icon: IconDatabase,
     },
     {
       title: "Block Stats",
@@ -69,6 +76,11 @@ const navData = {
       icon: IconChartHistogram,
     },
     {
+      title: "Tail Risk Analysis",
+      href: "/tail-risk-analysis",
+      icon: IconTrendingDown,
+    },
+    {
       title: "Walk-Forward",
       href: "/walk-forward",
       icon: IconTimelineEvent,
@@ -84,7 +96,6 @@ const navData = {
       title: "TradeBlocks Assistant",
       href: "/assistant",
       icon: IconSparkles,
-      badge: "New",
     },
   ],
 };

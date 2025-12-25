@@ -1,5 +1,7 @@
+import { enrichTrades, StaticDatasetWithRows } from '@/lib/calculations/enrich-trades'
 import { DailyLogEntry } from '@/lib/models/daily-log'
 import { EquityCurveEntry } from '@/lib/models/equity-curve'
+import { EnrichedTrade } from '@/lib/models/enriched-trade'
 import { PortfolioStats } from '@/lib/models/portfolio-stats'
 import { Trade } from '@/lib/models/trade'
 import {
@@ -39,6 +41,8 @@ export interface TradeBasedPerformanceData extends SnapshotChartData {
   allDailyLogs: DailyLogEntry[]
   portfolioStats: PortfolioStats | null
   groupedLegOutcomes: GroupedLegOutcomes | null
+  /** Pre-computed enriched trades for Report Builder (with MFE/MAE, ROM, timing, etc.) */
+  enrichedTrades: EnrichedTrade[]
 }
 
 export interface EquityCurvePerformanceData extends EquityCurveChartData {
@@ -65,6 +69,34 @@ interface PerformanceStore {
   applyFilters: () => Promise<void>
   setNormalizeTo1Lot: (value: boolean) => void
   reset: () => void
+}
+
+function ensureRomDetails(chartData: SnapshotChartData, trades: Trade[]): SnapshotChartData {
+  if (chartData.returnDistributionDetails && chartData.returnDistributionDetails.length > 0) {
+    return chartData
+  }
+
+  const romTrades = trades
+    .map((trade, index) => {
+      const marginReq = typeof trade.marginReq === 'number' && isFinite(trade.marginReq) ? trade.marginReq : 0
+      const rom = marginReq > 0 ? (trade.pl / marginReq) * 100 : undefined
+      return rom !== undefined
+        ? {
+            tradeNumber: index + 1,
+            date: new Date(trade.dateOpened).toISOString(),
+            pl: trade.pl,
+            marginReq,
+            strategy: trade.strategy,
+            rom
+          }
+        : null
+    })
+    .filter((t): t is NonNullable<typeof t> => Boolean(t))
+
+  return {
+    ...chartData,
+    returnDistributionDetails: romTrades
+  }
 }
 
 const initialDateRange: DateRange = {
@@ -151,7 +183,10 @@ export const usePerformanceStore = create<PerformanceStore>((set, get) => ({
         getDailyLogsByBlock,
         getEquityCurvesByBlock,
         getBlock,
-        getPerformanceSnapshotCache
+        getPerformanceSnapshotCache,
+        getEnrichedTradesCache,
+        getAllStaticDatasets,
+        getStaticDatasetRows
       } = await import('@/lib/db')
       const { isGenericBlock } = await import('@/lib/models/block')
 
@@ -185,6 +220,15 @@ export const usePerformanceStore = create<PerformanceStore>((set, get) => ({
         // Load trade-based data with caching and combineLegGroups support
         const combineLegGroups = block.analysisConfig?.combineLegGroups ?? false
 
+        // Load all static datasets with their rows for enrichment
+        const staticDatasets = await getAllStaticDatasets()
+        const staticDatasetsWithRows: StaticDatasetWithRows[] = await Promise.all(
+          staticDatasets.map(async (dataset) => ({
+            dataset,
+            rows: await getStaticDatasetRows(dataset.id)
+          }))
+        )
+
         const state = get()
         const riskFreeRate = 2.0
 
@@ -204,6 +248,19 @@ export const usePerformanceStore = create<PerformanceStore>((set, get) => ({
             const rawTrades = await getTradesByBlock(blockId)
             const groupedLegOutcomes = deriveGroupedLegOutcomes(rawTrades)
 
+            const chartDataWithRom = ensureRomDetails(cachedSnapshot.chartData, cachedSnapshot.filteredTrades)
+
+            // Try to get cached enriched trades, fall back to computing them
+            // Note: Static datasets aren't cached - always compute fresh to pick up new datasets
+            let enrichedTradesData = await getEnrichedTradesCache(blockId)
+            if (!enrichedTradesData || staticDatasetsWithRows.length > 0) {
+              // Cache miss or static datasets present - compute enriched trades
+              enrichedTradesData = enrichTrades(cachedSnapshot.filteredTrades, {
+                dailyLogs: cachedSnapshot.filteredDailyLogs,
+                staticDatasets: staticDatasetsWithRows
+              })
+            }
+
             set({
               data: {
                 blockType: 'trade-based',
@@ -214,7 +271,8 @@ export const usePerformanceStore = create<PerformanceStore>((set, get) => ({
                 allDailyLogs: cachedSnapshot.filteredDailyLogs,
                 portfolioStats: cachedSnapshot.portfolioStats,
                 groupedLegOutcomes,
-                ...cachedSnapshot.chartData
+                enrichedTrades: enrichedTradesData,
+                ...chartDataWithRom
               },
               isLoading: false
             })
@@ -239,8 +297,16 @@ export const usePerformanceStore = create<PerformanceStore>((set, get) => ({
           normalizeTo1Lot: state.normalizeTo1Lot
         })
 
+        const chartDataWithRom = ensureRomDetails(snapshot.chartData, snapshot.filteredTrades)
+
         const filteredRawTrades = filterTradesForSnapshot(rawTrades, updatedFilters)
         const groupedLegOutcomes = deriveGroupedLegOutcomes(filteredRawTrades)
+
+        // Compute enriched trades for filtered result (smaller set = faster)
+        const enrichedTradesData = enrichTrades(snapshot.filteredTrades, {
+          dailyLogs: snapshot.filteredDailyLogs,
+          staticDatasets: staticDatasetsWithRows
+        })
 
         set({
           data: {
@@ -252,7 +318,8 @@ export const usePerformanceStore = create<PerformanceStore>((set, get) => ({
             allDailyLogs: dailyLogs,
             portfolioStats: snapshot.portfolioStats,
             groupedLegOutcomes,
-            ...snapshot.chartData
+            enrichedTrades: enrichedTradesData,
+            ...chartDataWithRom
           },
           isLoading: false
         })
@@ -312,7 +379,25 @@ export const usePerformanceStore = create<PerformanceStore>((set, get) => ({
         normalizeTo1Lot
       })
 
+      const chartDataWithRom = ensureRomDetails(snapshot.chartData, snapshot.filteredTrades)
+
       const filteredRawTrades = filterTradesForSnapshot(data.allRawTrades, filters)
+
+      // Load static datasets for enrichment
+      const { getAllStaticDatasets, getStaticDatasetRows } = await import('@/lib/db')
+      const staticDatasets = await getAllStaticDatasets()
+      const staticDatasetsWithRows: StaticDatasetWithRows[] = await Promise.all(
+        staticDatasets.map(async (dataset) => ({
+          dataset,
+          rows: await getStaticDatasetRows(dataset.id)
+        }))
+      )
+
+      // Compute enriched trades for the filtered result
+      const enrichedTradesData = enrichTrades(snapshot.filteredTrades, {
+        dailyLogs: snapshot.filteredDailyLogs,
+        staticDatasets: staticDatasetsWithRows
+      })
 
       set(state => ({
         data: state.data && state.data.blockType === 'trade-based' ? {
@@ -321,7 +406,8 @@ export const usePerformanceStore = create<PerformanceStore>((set, get) => ({
           dailyLogs: snapshot.filteredDailyLogs,
           portfolioStats: snapshot.portfolioStats,
           groupedLegOutcomes: deriveGroupedLegOutcomes(filteredRawTrades),
-          ...snapshot.chartData
+          enrichedTrades: enrichedTradesData,
+          ...chartDataWithRom
         } : state.data
       }))
     }

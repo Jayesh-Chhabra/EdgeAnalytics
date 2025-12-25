@@ -4,7 +4,6 @@ import {
   StrategyStats,
 } from "./portfolio-stats";
 import { StrategyAlignment } from "./strategy-alignment";
-import { EquityCurve } from './equity-curve';
 // import { Trade } from './trade'
 // import { DailyLog } from './daily-log'
 

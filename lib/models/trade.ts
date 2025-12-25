@@ -49,6 +49,12 @@ export interface Trade {
    * Used to scale synthetic losses relative to current account size
    */
   syntheticCapitalRatio?: number
+
+  /**
+   * Custom fields from extra columns in the trade CSV
+   * Keys are the original column names, values are auto-detected as number or string
+   */
+  customFields?: Record<string, number | string>
 }
 
 /**
@@ -121,6 +127,7 @@ export const TRADE_COLUMN_ALIASES = {
   "Opening Commissions & Fees": "Opening Commissions + Fees",
   "Closing comms & fees": "Closing Commissions + Fees",
   "Closing Commissions & Fees": "Closing Commissions + Fees",
+  "P/L %": "P/L %", // Recognized but ignored (we calculate our own plPct)
 } as const
 
 /**

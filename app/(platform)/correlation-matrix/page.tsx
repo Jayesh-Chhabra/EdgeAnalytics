@@ -34,7 +34,6 @@ import {
 import { getBlock, getTradesByBlockWithOptions, getEquityCurvesByBlock } from "@/lib/db";
 import { Trade } from "@/lib/models/trade";
 import { EquityCurveEntry } from "@/lib/models/equity-curve";
-import { isGenericBlock } from "@/lib/models/block";
 import { useBlockStore, isEquityCurveBlock } from "@/lib/stores/block-store";
 import { truncateStrategyName } from "@/lib/utils";
 import {

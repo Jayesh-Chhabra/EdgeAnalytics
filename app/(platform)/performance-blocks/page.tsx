@@ -5,13 +5,14 @@ import { useBlockStore } from "@/lib/stores/block-store";
 import { usePerformanceStore } from "@/lib/stores/performance-store";
 import { format } from "date-fns";
 import {
-    AlertTriangle,
-    BarChart3,
-    CalendarIcon,
-    Gauge,
-    Loader2,
-    TrendingUp,
-    Zap,
+  AlertTriangle,
+  BarChart3,
+  CalendarIcon,
+  Gauge,
+  Loader2,
+  Proportions,
+  TrendingUp,
+  Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { DateRange } from "react-day-picker";
@@ -23,7 +24,8 @@ import { EquityCurveChart } from "@/components/performance-charts/equity-curve-c
 import { ExitReasonChart } from "@/components/performance-charts/exit-reason-chart";
 import { HoldingDurationChart } from "@/components/performance-charts/holding-duration-chart";
 import { MarginUtilizationChart } from "@/components/performance-charts/margin-utilization-chart";
-import { MFEMAEScatterChart } from "@/components/performance-charts/mfe-mae-scatter-chart";
+import { MarginUtilizationTable } from "@/components/performance-charts/margin-utilization-table";
+// MFEMAEScatterChart now available via ReportBuilderTab presets
 import { MonthlyReturnsChart } from "@/components/performance-charts/monthly-returns-chart";
 import { GroupedLegOutcomesChart } from "@/components/performance-charts/paired-leg-outcomes-chart";
 import { PremiumEfficiencyChart } from "@/components/performance-charts/premium-efficiency-chart";
@@ -34,6 +36,7 @@ import { ROMTimelineChart } from "@/components/performance-charts/rom-timeline-c
 import { TradeSequenceChart } from "@/components/performance-charts/trade-sequence-chart";
 import { VixRegimeChart } from "@/components/performance-charts/vix-regime-chart";
 import { WinLossStreaksChart } from "@/components/performance-charts/win-loss-streaks-chart";
+import { ReportBuilderTab } from "@/components/report-builder";
 
 // UI Components
 import { MultiSelect } from "@/components/multi-select";
@@ -291,9 +294,9 @@ export default function PerformanceBlocksPage() {
               <Zap /> Trade Efficiency
             </code>
           </TabsTrigger>
-          <TabsTrigger value="excursion" className="px-2.5 sm:px-3">
+          <TabsTrigger value="report-builder" className="px-2.5 sm:px-3">
             <code className="flex items-center gap-1 text-[13px] [&>svg]:h-4 [&>svg]:w-4">
-              <AlertTriangle /> Excursion Analysis (Beta)
+              <Proportions /> Report Builder (Beta)
             </code>
           </TabsTrigger>
         </TabsList>
@@ -320,6 +323,7 @@ export default function PerformanceBlocksPage() {
           <ROMTimelineChart />
           <GroupedLegOutcomesChart />
           <MarginUtilizationChart />
+          <MarginUtilizationTable />
           <RiskEvolutionChart />
           <HoldingDurationChart />
         </TabsContent>
@@ -333,9 +337,9 @@ export default function PerformanceBlocksPage() {
           {/* Additional efficiency metrics can go here */}
         </TabsContent>
 
-        {/* Tab 5: Excursion Analysis */}
-        <TabsContent value="excursion" className="space-y-6">
-          <MFEMAEScatterChart />
+        {/* Tab 5: Report Builder */}
+        <TabsContent value="report-builder" className="space-y-6">
+          <ReportBuilderTab />
         </TabsContent>
       </Tabs>
     </div>

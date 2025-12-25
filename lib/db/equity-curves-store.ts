@@ -50,7 +50,8 @@ export async function getEquityCurvesByBlock(blockId: string): Promise<EquityCur
     const entries = await promisifyRequest(index.getAll(blockId))
 
     // Remove blockId before returning (not part of EquityCurveEntry interface)
-    return entries.map(({ blockId, ...entry }) => entry as EquityCurveEntry)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    return entries.map(({ blockId: _blockId, ...entry }) => entry as EquityCurveEntry)
   })
 }
 
@@ -66,7 +67,8 @@ export async function getEquityCurvesByBlockAndStrategy(
     const index = store.index('composite_block_strategy')
     const entries = await promisifyRequest(index.getAll([blockId, strategyName]))
 
-    return entries.map(({ blockId, ...entry }) => entry as EquityCurveEntry)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    return entries.map(({ blockId: _blockId, ...entry }) => entry as EquityCurveEntry)
   })
 }
 
