@@ -242,7 +242,8 @@ export function EquityCurveEditDialog({
       );
 
       const updatedDataReferences = { ...dbBlock.dataReferences };
-      const { [strategyName]: _, ...remainingKeys } = updatedDataReferences.equityCurveStorageKeys;
+      const { [strategyName]: _unused, ...remainingKeys } = updatedDataReferences.equityCurveStorageKeys;
+      void _unused; // Mark as intentionally unused
       updatedDataReferences.equityCurveStorageKeys = remainingKeys;
 
       // Update block in DB

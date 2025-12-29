@@ -4,7 +4,6 @@ import {
   StrategyStats,
 } from "./portfolio-stats";
 import { StrategyAlignment } from "./strategy-alignment";
-import { EquityCurve } from './equity-curve';
 // import { Trade } from './trade'
 // import { DailyLog } from './daily-log'
 
@@ -44,6 +43,12 @@ export interface ProcessedBlock {
     originalRowCount: number;
     processedRowCount: number;
     uploadedAt: Date;
+  };
+
+  // Date range of trades (min/max dateOpened)
+  dateRange?: {
+    start: Date;
+    end: Date;
   };
 
   // Processing status

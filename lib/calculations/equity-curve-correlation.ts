@@ -1,5 +1,5 @@
 import { EquityCurveEntry } from "../models/equity-curve";
-import { std, variance } from "mathjs";
+import { std } from "mathjs";
 
 export interface EquityCurveCorrelationMatrix {
   strategies: string[]

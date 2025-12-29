@@ -14,7 +14,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { addEquityCurveEntries, createBlock } from "@/lib/db";
 import { GenericBlock } from "@/lib/models/block";
@@ -25,7 +24,6 @@ import {
 import { EquityCurveProcessor } from "@/lib/processing/equity-curve-processor";
 import {
     AlertCircle,
-    CheckCircle2,
     FileSpreadsheet,
     Loader2,
     Plus,

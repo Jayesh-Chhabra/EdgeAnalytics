@@ -29,21 +29,21 @@ export const rawTradeDataSchema = z.object({
   "Movement": z.string().optional(),
   "Max Profit": z.string().optional(),
   "Max Loss": z.string().optional(),
-})
+}).passthrough() // Allow custom columns to pass through validation
 
 /**
  * Zod schema for validating processed trade data
  */
 export const tradeSchema = z.object({
   dateOpened: z.date(),
-  timeOpened: z.string().regex(/^\d{2}:\d{2}:\d{2}$/, "Time must be in HH:mm:ss format"),
+  timeOpened: z.string().regex(/^\d{1,2}:\d{2}:\d{2}$/, "Time must be in H:mm:ss or HH:mm:ss format"),
   openingPrice: z.number().finite(),
   legs: z.string().min(1),
   premium: z.number().finite(),
   premiumPrecision: z.enum(['dollars', 'cents']).optional(),
   closingPrice: z.number().finite().optional(),
   dateClosed: z.date().optional(),
-  timeClosed: z.string().regex(/^\d{2}:\d{2}:\d{2}$/).optional(),
+  timeClosed: z.string().regex(/^\d{1,2}:\d{2}:\d{2}$/).optional(),
   avgClosingCost: z.number().finite().optional(),
   reasonForClose: z.string().optional(),
   pl: z.number().finite(),
@@ -61,6 +61,8 @@ export const tradeSchema = z.object({
   movement: z.number().finite().optional(),
   maxProfit: z.number().finite().optional(),
   maxLoss: z.number().finite().optional(),
+  syntheticCapitalRatio: z.number().finite().optional(),
+  customFields: z.record(z.string(), z.union([z.number(), z.string()])).optional(),
 })
 
 /**
@@ -69,6 +71,7 @@ export const tradeSchema = z.object({
 export const rawReportingTradeDataSchema = z.object({
   "Strategy": z.string().min(1, "Strategy is required"),
   "Date Opened": z.string().min(1, "Date Opened is required"),
+  "Time Opened": z.string().optional(),
   "Opening Price": z.string().min(1, "Opening Price is required"),
   "Legs": z.string().min(1, "Legs description is required"),
   "Initial Premium": z.string().min(1, "Initial Premium is required"),
@@ -76,6 +79,7 @@ export const rawReportingTradeDataSchema = z.object({
   "P/L": z.string().min(1, "P/L is required"),
   "Closing Price": z.string().optional(),
   "Date Closed": z.string().optional(),
+  "Time Closed": z.string().optional(),
   "Avg. Closing Cost": z.string().optional(),
   "Reason For Close": z.string().optional(),
 })
@@ -86,6 +90,7 @@ export const rawReportingTradeDataSchema = z.object({
 export const reportingTradeSchema = z.object({
   strategy: z.string().min(1),
   dateOpened: z.date(),
+  timeOpened: z.string().optional(),
   openingPrice: z.number().finite(),
   legs: z.string().min(1),
   initialPremium: z.number().finite(),
@@ -93,6 +98,7 @@ export const reportingTradeSchema = z.object({
   pl: z.number().finite(),
   closingPrice: z.number().finite().optional(),
   dateClosed: z.date().optional(),
+  timeClosed: z.string().optional(),
   avgClosingCost: z.number().finite().optional(),
   reasonForClose: z.string().optional(),
 })
@@ -109,7 +115,7 @@ export const rawDailyLogDataSchema = z.object({
   "P/L": z.string().min(1, "P/L is required"),
   "P/L %": z.string().min(1, "P/L % is required"),
   "Drawdown %": z.string().min(1, "Drawdown % is required"),
-})
+}).passthrough() // Allow custom columns to pass through validation
 
 /**
  * Zod schema for validating processed daily log entry
@@ -124,6 +130,7 @@ export const dailyLogEntrySchema = z.object({
   dailyPlPct: z.number().finite(),
   drawdownPct: z.number().finite().max(0), // Drawdown should be negative or zero
   blockId: z.string().optional(),
+  customFields: z.record(z.string(), z.union([z.number(), z.string()])).optional(),
 })
 
 /**

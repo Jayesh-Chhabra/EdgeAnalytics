@@ -1,15 +1,17 @@
 "use client";
 
 import {
+  IconCalendar,
   IconChartHistogram,
+  IconDatabase,
   IconGauge,
   IconLayoutDashboard,
-  IconLink,
   IconReportAnalytics,
   IconRouteSquare,
   IconSparkles,
   IconStack2,
   IconTimelineEvent,
+  IconTrendingDown,
 } from "@tabler/icons-react";
 import { Blocks } from "lucide-react";
 import Link from "next/link";
@@ -36,6 +38,11 @@ const navData = {
       title: "Block Management",
       href: "/blocks",
       icon: IconStack2,
+    },
+    {
+      title: "Static Datasets",
+      href: "/static-datasets",
+      icon: IconDatabase,
     },
     {
       title: "Block Stats",
@@ -69,22 +76,26 @@ const navData = {
       icon: IconChartHistogram,
     },
     {
+      title: "Tail Risk Analysis",
+      href: "/tail-risk-analysis",
+      icon: IconTrendingDown,
+    },
+    {
       title: "Walk-Forward",
       href: "/walk-forward",
       icon: IconTimelineEvent,
       badge: "Beta",
     },
     {
-      title: "Comparison Blocks",
-      href: "/comparison-blocks",
-      icon: IconLink,
-      badge: "Beta",
+      title: "Trading Calendar",
+      href: "/trading-calendar",
+      icon: IconCalendar,
+      badge: "New",
     },
     {
       title: "TradeBlocks Assistant",
       href: "/assistant",
       icon: IconSparkles,
-      badge: "New",
     },
   ],
 };
@@ -131,10 +142,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      <SidebarContent className="relative">
+      <SidebarContent>
         <NavMain items={navData.navMain} />
-        {/* Scroll indicator - subtle gradient fade at bottom */}
-        <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-sidebar to-transparent" />
       </SidebarContent>
       {hasActiveBlock && activeBlock && (
         <SidebarActiveBlocks activeBlock={activeBlock} />

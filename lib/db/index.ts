@@ -13,7 +13,7 @@
 
 // Database configuration
 export const DB_NAME = "TradeBlocksDB";
-export const DB_VERSION = 3; // Updated for equity curves and walk-forward analysis support
+export const DB_VERSION = 4; // Updated for equity curves, walk-forward, and static datasets support
 
 // Object store names
 export const STORES = {
@@ -24,6 +24,8 @@ export const STORES = {
   REPORTING_LOGS: "reportingLogs",
   EQUITY_CURVES: "equityCurves", // New store for equity curve entries
   WALK_FORWARD: "walkForwardAnalyses", // New store for walk-forward analyses
+  STATIC_DATASETS: "staticDatasets",
+  STATIC_DATASET_ROWS: "staticDatasetRows",
 } as const;
 
 // Index names
@@ -40,6 +42,8 @@ export const INDEXES = {
   EQUITY_CURVES_BY_STRATEGY: "strategyName",
   EQUITY_CURVES_BY_DATE: "date",
   WALK_FORWARD_BY_BLOCK: "blockId",
+  STATIC_DATASET_ROWS_BY_DATASET: "datasetId",
+  STATIC_DATASET_ROWS_BY_TIMESTAMP: "timestamp",
 } as const;
 
 /**
@@ -206,6 +210,37 @@ export async function initializeDatabase(): Promise<IDBDatabase> {
         walkForwardStore.createIndex("createdAt", "createdAt", { unique: false });
       }
 
+      // Create static datasets store (metadata)
+      if (!db.objectStoreNames.contains(STORES.STATIC_DATASETS)) {
+        const staticDatasetsStore = db.createObjectStore(STORES.STATIC_DATASETS, {
+          keyPath: "id",
+        });
+        staticDatasetsStore.createIndex("name", "name", { unique: true });
+        staticDatasetsStore.createIndex("uploadedAt", "uploadedAt", { unique: false });
+      }
+
+      // Create static dataset rows store (data rows)
+      if (!db.objectStoreNames.contains(STORES.STATIC_DATASET_ROWS)) {
+        const staticDatasetRowsStore = db.createObjectStore(STORES.STATIC_DATASET_ROWS, {
+          autoIncrement: true,
+        });
+        staticDatasetRowsStore.createIndex(
+          INDEXES.STATIC_DATASET_ROWS_BY_DATASET,
+          "datasetId",
+          { unique: false }
+        );
+        staticDatasetRowsStore.createIndex(
+          INDEXES.STATIC_DATASET_ROWS_BY_TIMESTAMP,
+          "timestamp",
+          { unique: false }
+        );
+        staticDatasetRowsStore.createIndex(
+          "composite_dataset_timestamp",
+          ["datasetId", "timestamp"],
+          { unique: false }
+        );
+      }
+
       transaction.oncomplete = () => {
         dbInstance = db;
         resolve(db);
@@ -236,18 +271,50 @@ export function closeDatabase(): void {
 
 /**
  * Delete the entire database (for testing/reset)
+ * This version is more robust for corrupted databases:
+ * - Doesn't require opening the database first
+ * - Has timeout to prevent hanging forever
+ * - Resolves on blocked (since deletion completes after reload)
  */
 export async function deleteDatabase(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    closeDatabase();
+  return new Promise((resolve) => {
+    // Close any existing connection (don't wait for it)
+    if (dbInstance) {
+      try {
+        dbInstance.close();
+      } catch {
+        // Ignore close errors - database might be in bad state
+      }
+      dbInstance = null;
+    }
 
     const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
 
-    deleteRequest.onsuccess = () => resolve();
-    deleteRequest.onerror = () =>
-      reject(new Error("Failed to delete database"));
-    deleteRequest.onblocked = () =>
-      reject(new Error("Database deletion blocked"));
+    // Timeout to prevent hanging forever on corrupted database
+    const timeout = setTimeout(() => {
+      console.warn("Database deletion timed out - will retry after reload");
+      resolve(); // Resolve anyway so we can reload
+    }, 5000);
+
+    deleteRequest.onsuccess = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+
+    deleteRequest.onerror = () => {
+      clearTimeout(timeout);
+      console.error("Failed to delete database:", deleteRequest.error);
+      // Still resolve - user can retry after page reload
+      resolve();
+    };
+
+    deleteRequest.onblocked = () => {
+      clearTimeout(timeout);
+      console.warn("Database deletion blocked - will complete after reload");
+      // Resolve instead of reject - the deletion will complete once all connections close
+      // After page reload, there will be no connections blocking it
+      resolve();
+    };
   });
 }
 
@@ -433,3 +500,29 @@ export {
   hasPerformanceSnapshotCache,
 } from "./performance-snapshot-cache";
 export type { CachedPerformanceSnapshot } from "./performance-snapshot-cache";
+export {
+  storeEnrichedTradesCache,
+  getEnrichedTradesCache,
+  deleteEnrichedTradesCache,
+  hasEnrichedTradesCache,
+} from "./enriched-trades-cache";
+export {
+  createStaticDataset,
+  getStaticDataset,
+  getStaticDatasetByName,
+  getAllStaticDatasets,
+  updateStaticDatasetMatchStrategy,
+  updateStaticDatasetName,
+  deleteStaticDataset,
+  isDatasetNameTaken,
+  getStaticDatasetCount,
+} from "./static-datasets-store";
+export {
+  addStaticDatasetRows,
+  getStaticDatasetRows,
+  getStaticDatasetRowsByRange,
+  getStaticDatasetRowCount,
+  deleteStaticDatasetRows,
+  deleteStaticDatasetWithRows,
+  getStaticDatasetDateRange,
+} from "./static-dataset-rows-store";

@@ -53,7 +53,12 @@ import {
   storePerformanceSnapshotCache,
   deletePerformanceSnapshotCache,
 } from "@/lib/db/performance-snapshot-cache";
+import {
+  storeEnrichedTradesCache,
+  deleteEnrichedTradesCache,
+} from "@/lib/db/enriched-trades-cache";
 import { buildPerformanceSnapshot } from "@/lib/services/performance-snapshot";
+import { enrichTrades } from "@/lib/calculations/enrich-trades";
 import { combineAllLegGroupsAsync } from "@/lib/utils/combine-leg-groups";
 import { REQUIRED_DAILY_LOG_COLUMNS } from "@/lib/models/daily-log";
 import {
@@ -82,7 +87,6 @@ import {
   TradeProcessor,
 } from "@/lib/processing/trade-processor";
 import { useBlockStore, Block, isTradeBasedBlock } from "@/lib/stores/block-store";
-import { useComparisonStore } from "@/lib/stores/comparison-store";
 import { cn } from "@/lib/utils";
 import {
   findMissingHeaders,
@@ -243,7 +247,6 @@ export function BlockDialog({
     refreshBlock,
     deleteBlock,
   } = useBlockStore();
-  const resetComparison = useComparisonStore((state) => state.reset);
 
   // Reset form when dialog opens/closes or mode changes
   useEffect(() => {
@@ -1012,6 +1015,14 @@ export function BlockDialog({
                 uploadedAt: now,
               }
             : undefined,
+          dateRange:
+            processedPreview.trades?.stats.dateRange.start &&
+            processedPreview.trades?.stats.dateRange.end
+              ? {
+                  start: processedPreview.trades.stats.dateRange.start,
+                  end: processedPreview.trades.stats.dateRange.end,
+                }
+              : undefined,
           processingStatus: "completed" as const,
           dataReferences: {
             tradesStorageKey: `block_${timestamp}_trades`,
@@ -1113,6 +1124,14 @@ export function BlockDialog({
             progress.update("Saving to cache...", 96);
             await waitForRender();
             await storePerformanceSnapshotCache(newBlock.id, snapshot);
+
+            // Pre-compute enriched trades for Report Builder
+            progress.update("Pre-computing enriched trades...", 98);
+            await waitForRender();
+            const enrichedTrades = enrichTrades(tradesToUse, {
+              dailyLogs: processedPreview.dailyLogs?.entries,
+            });
+            await storeEnrichedTradesCache(newBlock.id, enrichedTrades);
           } catch (err) {
             if (err instanceof Error && err.name === "AbortError") {
               // User cancelled - skip caching, save still succeeds
@@ -1365,6 +1384,14 @@ export function BlockDialog({
                 progress.update("Saving to cache...", 96);
                 await waitForRender();
                 await storePerformanceSnapshotCache(block.id, snapshot);
+
+                // Pre-compute enriched trades for Report Builder
+                progress.update("Pre-computing enriched trades...", 98);
+                await waitForRender();
+                const enrichedTrades = enrichTrades(combinedTrades, {
+                  dailyLogs: existingDailyLogs,
+                });
+                await storeEnrichedTradesCache(block.id, enrichedTrades);
               } catch (err) {
                 if (err instanceof Error && err.name === "AbortError") {
                   console.log("Pre-calculation cancelled by user");
@@ -1411,6 +1438,14 @@ export function BlockDialog({
                 progress.update("Saving to cache...", 96);
                 await waitForRender();
                 await storePerformanceSnapshotCache(block.id, snapshot);
+
+                // Pre-compute enriched trades for Report Builder
+                progress.update("Pre-computing enriched trades...", 98);
+                await waitForRender();
+                const enrichedTrades = enrichTrades(existingTrades, {
+                  dailyLogs: existingDailyLogs,
+                });
+                await storeEnrichedTradesCache(block.id, enrichedTrades);
               } catch (err) {
                 if (err instanceof Error && err.name === "AbortError") {
                   console.log("Pre-calculation cancelled by user");
@@ -1469,6 +1504,17 @@ export function BlockDialog({
             processedRowCount: processedData.trades.trades.length,
             uploadedAt: new Date(),
           };
+
+          // Update dateRange when trades are replaced
+          if (
+            processedData.trades.stats.dateRange.start &&
+            processedData.trades.stats.dateRange.end
+          ) {
+            metadataUpdates.dateRange = {
+              start: processedData.trades.stats.dateRange.start,
+              end: processedData.trades.stats.dateRange.end,
+            };
+          }
 
           // Save trades to IndexedDB (replace all existing trades)
           await updateTradesForBlock(block.id, processedData.trades.trades);
@@ -1562,9 +1608,6 @@ export function BlockDialog({
             block.id,
             processedData.reporting.trades
           );
-
-          // Clear comparison data since reporting trades changed
-          resetComparison();
         } else if (
           !reportingLog.file &&
           reportingLog.status === "empty" &&
@@ -1576,9 +1619,6 @@ export function BlockDialog({
           metadataUpdates.reportingLog = undefined;
           metadataUpdates.strategyAlignment = undefined;
           await deleteReportingTradesByBlock(block.id);
-
-          // Clear comparison data since reporting log was removed
-          resetComparison();
         }
 
         if (Object.keys(metadataUpdates).length > 1) {
@@ -1627,6 +1667,12 @@ export function BlockDialog({
                 progress.update("Saving to cache...", 96);
                 await waitForRender();
                 await storePerformanceSnapshotCache(block.id, snapshot);
+
+                // Pre-compute enriched trades for Report Builder
+                progress.update("Pre-computing enriched trades...", 98);
+                await waitForRender();
+                const enrichedTrades = enrichTrades(trades, { dailyLogs });
+                await storeEnrichedTradesCache(block.id, enrichedTrades);
               } catch (err) {
                 if (err instanceof Error && err.name === "AbortError") {
                   console.log("Pre-calculation cancelled by user");
@@ -1640,6 +1686,7 @@ export function BlockDialog({
             } else {
               // No trades, delete the cache
               await deletePerformanceSnapshotCache(block.id);
+              await deleteEnrichedTradesCache(block.id);
             }
           }
         }

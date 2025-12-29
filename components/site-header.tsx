@@ -41,13 +41,24 @@ const routeMeta: Record<
     title: "Correlation Matrix",
     description: "Understand strategy overlap before deploying capital.",
   },
-  "/comparison-blocks": {
-    title: "Comparison Blocks",
+  "/tail-risk-analysis": {
+    title: "Tail Risk Analysis",
+    description:
+      "Measure how strategies blow up together during market stress.",
+  },
+  "/trading-calendar": {
+    title: "Trading Calendar",
     description: "Align and compare backtested vs reported trade data.",
   },
   "/walk-forward": {
     title: "Walk-Forward Analysis",
-    description: "Validate performance across shifting regimes with rolling IS/OOS windows.",
+    description:
+      "Validate performance across shifting regimes with rolling IS/OOS windows.",
+  },
+  "/static-datasets": {
+    title: "Static Datasets",
+    description:
+      "Upload and manage time-series data to match against your trades.",
   },
   "/settings": {
     title: "Settings",
