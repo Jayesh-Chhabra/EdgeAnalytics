@@ -42,7 +42,7 @@ import {
   generateExportFilename,
   toCsvRow,
 } from "@/lib/utils/export-helpers";
-import { Download, HelpCircle, Info } from "lucide-react";
+import { AlertTriangle, Download, HelpCircle, Info } from "lucide-react";
 import { useTheme } from "next-themes";
 // @ts-expect-error - Plotly types are not fully compatible with TypeScript strict mode
 import type { Layout, PlotData } from "plotly.js-dist-min";
@@ -63,8 +63,22 @@ export default function CorrelationMatrixPage() {
   const [normalization, setNormalization] =
     useState<CorrelationNormalization>("raw");
   const [dateBasis, setDateBasis] = useState<CorrelationDateBasis>("opened");
+  const [minSamples, setMinSamples] = useState<number>(2);
 
+  const analyticsContext = useMemo(
+    () =>
+      formatAnalyticsContext({
+        method,
+        alignment,
+        normalization,
+        dateBasis,
+        minSamples,
+      }),
+    [method, alignment, normalization, dateBasis, minSamples]
+  );
 
+  // TODO: Display analyticsContext in UI
+  void analyticsContext;
 
   useEffect(() => {
     async function loadData() {
@@ -127,18 +141,18 @@ export default function CorrelationMatrixPage() {
         normalization,
         dateBasis,
       });
-      const stats = calculateCorrelationAnalytics(matrix);
+      const stats = calculateCorrelationAnalytics(matrix, minSamples);
 
       return { correlationMatrix: matrix, analytics: stats };
     }
-  }, [blockType, trades, equityCurveEntries, method, alignment, normalization, dateBasis]);
+  }, [blockType, trades, equityCurveEntries, method, alignment, normalization, dateBasis, minSamples]);
 
   const { plotData, layout } = useMemo(() => {
     if (!correlationMatrix) {
       return { plotData: [], layout: {} };
     }
 
-    const { strategies, correlationData } = correlationMatrix;
+    const { strategies, correlationData, sampleSizes } = correlationMatrix;
     const isDark = theme === "dark";
 
     // Truncate strategy names for axis labels
@@ -170,8 +184,74 @@ export default function CorrelationMatrixPage() {
           [1, "#67001f"], // Strong dark red for 1
         ];
 
+    // Mark cells with insufficient samples as null for display
+    const displayMatrix = correlationData.map((row, i) =>
+      row.map((val, j) => {
+        if (i === j) return 1.0; // Diagonal always valid
+        const n = sampleSizes[i][j];
+        if (Number.isNaN(val) || n < minSamples) return null;
+        return val;
+      })
+    );
+
+    // Text labels: show "—" for insufficient data
+    const textLabels = correlationData.map((row, i) =>
+      row.map((val, j) => {
+        if (i === j) return "1.00";
+        const n = sampleSizes[i][j];
+        if (Number.isNaN(val) || n < minSamples) return "—";
+        return val.toFixed(2);
+      })
+    );
+
+    // Text colors: gray for insufficient data cells
+    const textColors = correlationData.map((row, i) =>
+      row.map((val, j) => {
+        const n = sampleSizes[i][j];
+        if (Number.isNaN(val) || n < minSamples) {
+          return isDark ? "#6b7280" : "#9ca3af"; // Gray
+        }
+        const absVal = Math.abs(val);
+        if (isDark) {
+          return absVal > 0.5 ? "#ffffff" : "#e2e8f0";
+        } else {
+          return absVal > 0.5 ? "#ffffff" : "#000000";
+        }
+      })
+    );
+
+    // Custom data for hover tooltips
+    const customdata = correlationData.map((row, yIndex) =>
+      row.map((val, xIndex) => {
+        const n = sampleSizes[yIndex][xIndex];
+        const isInsufficient = Number.isNaN(val) || n < minSamples;
+        return [
+          strategies[yIndex],
+          strategies[xIndex],
+          n,
+          isInsufficient,
+        ];
+      })
+    );
+
+    // Build per-cell hover templates
+    const hovertext = correlationData.map((row, i) =>
+      row.map((val, j) => {
+        const n = sampleSizes[i][j];
+        const strat1 = strategies[i];
+        const strat2 = strategies[j];
+        if (i === j) {
+          return `<b>${strat1}</b><br>n=${n} trading days`;
+        }
+        if (Number.isNaN(val) || n < minSamples) {
+          return `<b>${strat1} ↔ ${strat2}</b><br>Insufficient data (n=${n}, requires ${minSamples})`;
+        }
+        return `<b>${strat1} ↔ ${strat2}</b><br>Correlation: ${val.toFixed(3)}<br>Sample size: n=${n}`;
+      })
+    );
+
     const heatmapData = {
-      z: correlationData,
+      z: displayMatrix,
       x: truncatedStrategies,
       y: truncatedStrategies,
       type: "heatmap" as const,
@@ -179,30 +259,15 @@ export default function CorrelationMatrixPage() {
       zmid: 0,
       zmin: -1,
       zmax: 1,
-      text: correlationData.map((row) => row.map((val) => val.toFixed(2))) as unknown as string,
+      text: textLabels as unknown as string,
       texttemplate: "%{text}",
       textfont: {
         size: 10,
-        color: correlationData.map((row) =>
-          row.map((val) => {
-            // Dynamic text color based on value and theme
-            const absVal = Math.abs(val);
-            if (isDark) {
-              // In dark mode, use lighter text for strong correlations
-              return absVal > 0.5 ? "#ffffff" : "#e2e8f0";
-            } else {
-              // In light mode, use white for strong, black for weak
-              return absVal > 0.5 ? "#ffffff" : "#000000";
-            }
-          })
-        ) as unknown as string,
+        color: textColors as unknown as string,
       },
-      // Use full strategy names in hover tooltip
-      hovertemplate:
-        "<b>%{customdata[0]} ↔ %{customdata[1]}</b><br>Correlation: %{z:.3f}<extra></extra>",
-      customdata: correlationData.map((row, yIndex) =>
-        row.map((_, xIndex) => [strategies[yIndex], strategies[xIndex]])
-      ),
+      hovertext: hovertext as unknown as string,
+      hovertemplate: "%{hovertext}<extra></extra>",
+      customdata,
       colorbar: {
         title: { text: "Correlation", side: "right" },
         tickmode: "linear",
@@ -232,7 +297,7 @@ export default function CorrelationMatrixPage() {
     };
 
     return { plotData: [heatmapData as unknown as PlotData], layout: heatmapLayout };
-  }, [correlationMatrix, theme]);
+  }, [correlationMatrix, theme, minSamples]);
 
   const isDark = theme === "dark";
 
@@ -247,13 +312,14 @@ export default function CorrelationMatrixPage() {
       alignment,
       normalization,
       dateBasis,
+      minSamples,
     });
 
     downloadCsv(
       lines,
       generateExportFilename(activeBlock.name, "correlation", "csv")
     );
-  }, [correlationMatrix, method, alignment, normalization, dateBasis, activeBlock]);
+  }, [correlationMatrix, method, alignment, normalization, dateBasis, minSamples, activeBlock]);
 
   const handleDownloadJson = useCallback(() => {
     if (!correlationMatrix || !activeBlock) {
@@ -271,15 +337,18 @@ export default function CorrelationMatrixPage() {
         alignment,
         normalization,
         dateBasis,
+        minSamples,
       },
       strategies: correlationMatrix.strategies,
       correlationMatrix: correlationMatrix.correlationData,
+      sampleSizes: correlationMatrix.sampleSizes,
       analytics: analytics
         ? {
             strongest: analytics.strongest,
             weakest: analytics.weakest,
             averageCorrelation: analytics.averageCorrelation,
             strategyCount: analytics.strategyCount,
+            insufficientDataPairs: analytics.insufficientDataPairs,
           }
         : null,
     };
@@ -288,7 +357,7 @@ export default function CorrelationMatrixPage() {
       exportData,
       generateExportFilename(activeBlock.name, "correlation", "json")
     );
-  }, [correlationMatrix, analytics, method, alignment, normalization, dateBasis, activeBlock]);
+  }, [correlationMatrix, analytics, method, alignment, normalization, dateBasis, minSamples, activeBlock]);
 
   if (loading) {
     return (
@@ -353,7 +422,7 @@ export default function CorrelationMatrixPage() {
           <CardTitle className="text-lg">Calculation Settings</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
             {/* Method */}
             <div className="space-y-2">
               <div className="flex items-center gap-2">
@@ -543,6 +612,53 @@ export default function CorrelationMatrixPage() {
                 {dateBasis === "closed" && "Group by exit date"}
               </p>
             </div>
+
+            {/* Min. Samples */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="min-samples-select">Min. Samples</Label>
+                <HoverCard>
+                  <HoverCardTrigger asChild>
+                    <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
+                  </HoverCardTrigger>
+                  <HoverCardContent className="w-80 p-0 overflow-hidden">
+                    <div className="space-y-3">
+                      <div className="bg-primary/5 border-b px-4 py-3">
+                        <h4 className="text-sm font-semibold text-primary">Minimum Sample Size</h4>
+                      </div>
+                      <div className="px-4 pb-4 space-y-3">
+                        <p className="text-sm font-medium text-foreground leading-relaxed">
+                          Minimum shared trading days required for valid correlation
+                        </p>
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          Correlations calculated with fewer shared days than this threshold are shown as
+                          &ldquo;—&rdquo; to indicate insufficient data. Higher thresholds give more reliable
+                          correlations but may exclude more strategy pairs.
+                        </p>
+                      </div>
+                    </div>
+                  </HoverCardContent>
+                </HoverCard>
+              </div>
+              <Select
+                value={String(minSamples)}
+                onValueChange={(value) => setMinSamples(Number(value))}
+              >
+                <SelectTrigger id="min-samples-select">
+                  <SelectValue placeholder="Min samples" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="2">2 (default)</SelectItem>
+                  <SelectItem value="5">5</SelectItem>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="30">30</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Pairs with fewer shared days show &ldquo;—&rdquo;
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -582,6 +698,26 @@ export default function CorrelationMatrixPage() {
         }
       />
 
+      {/* Insufficient Data Warning */}
+      {analytics && analytics.insufficientDataPairs > 0 && (
+        <Card className="border-l-4 border-l-amber-500">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-medium">
+                  {analytics.insufficientDataPairs} Strategy Pair{analytics.insufficientDataPairs > 1 ? "s Have" : " Has"} Insufficient Data
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  These pairs have fewer than {minSamples} shared trading days and are shown as &ldquo;—&rdquo; in the heatmap.
+                  Lower the Min. Samples threshold to include them, or use Zero-fill alignment.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Quick Analysis */}
       {analytics && (
         <Card>
@@ -594,24 +730,42 @@ export default function CorrelationMatrixPage() {
                 <div className="text-sm font-medium text-muted-foreground">
                   Strongest:
                 </div>
-                <div className="text-2xl font-bold" style={{ color: isDark ? '#fca5a5' : '#dc2626' }}>
-                  {analytics.strongest.value.toFixed(2)}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {analytics.strongest.pair[0]} ↔ {analytics.strongest.pair[1]}
-                </div>
+                {Number.isNaN(analytics.strongest.value) ? (
+                  <div className="text-2xl font-bold text-muted-foreground">—</div>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold" style={{ color: isDark ? '#fca5a5' : '#dc2626' }}>
+                      {analytics.strongest.value.toFixed(2)}
+                      <span className="text-sm font-normal text-muted-foreground ml-2">
+                        (n={analytics.strongest.sampleSize})
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {analytics.strongest.pair[0]} ↔ {analytics.strongest.pair[1]}
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="space-y-1">
                 <div className="text-sm font-medium text-muted-foreground">
                   Weakest:
                 </div>
-                <div className="text-2xl font-bold" style={{ color: isDark ? '#93c5fd' : '#2563eb' }}>
-                  {analytics.weakest.value.toFixed(2)}
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {analytics.weakest.pair[0]} ↔ {analytics.weakest.pair[1]}
-                </div>
+                {Number.isNaN(analytics.weakest.value) ? (
+                  <div className="text-2xl font-bold text-muted-foreground">—</div>
+                ) : (
+                  <>
+                    <div className="text-2xl font-bold" style={{ color: isDark ? '#93c5fd' : '#2563eb' }}>
+                      {analytics.weakest.value.toFixed(2)}
+                      <span className="text-sm font-normal text-muted-foreground ml-2">
+                        (n={analytics.weakest.sampleSize})
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {analytics.weakest.pair[0]} ↔ {analytics.weakest.pair[1]}
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -639,7 +793,7 @@ export default function CorrelationMatrixPage() {
                   </HoverCard>
                 </div>
                 <div className="text-2xl font-bold">
-                  {analytics.averageCorrelation.toFixed(2)}
+                  {Number.isNaN(analytics.averageCorrelation) ? "—" : analytics.averageCorrelation.toFixed(2)}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   {analytics.strategyCount} strategies
@@ -660,6 +814,7 @@ interface CsvMeta {
   alignment: string;
   normalization: string;
   dateBasis: string;
+  minSamples: number;
 }
 
 function buildCorrelationCsvLines(
@@ -674,16 +829,31 @@ function buildCorrelationCsvLines(
   lines.push(toCsvRow(["Alignment", meta.alignment]));
   lines.push(toCsvRow(["Return Basis", meta.normalization]));
   lines.push(toCsvRow(["Date Basis", meta.dateBasis]));
+  lines.push(toCsvRow(["Min. Samples Threshold", meta.minSamples]));
   lines.push(toCsvRow(["Strategy Count", matrix.strategies.length]));
 
   lines.push("");
+  lines.push(toCsvRow(["=== CORRELATION MATRIX ==="]));
 
   lines.push(toCsvRow(["Strategy", ...matrix.strategies]));
   matrix.correlationData.forEach((row, index) => {
     lines.push(
       toCsvRow([
         matrix.strategies[index],
-        ...row.map((value) => value.toFixed(6)),
+        ...row.map((value) => Number.isNaN(value) ? "N/A" : value.toFixed(6)),
+      ])
+    );
+  });
+
+  lines.push("");
+  lines.push(toCsvRow(["=== SAMPLE SIZES (Shared Trading Days) ==="]));
+
+  lines.push(toCsvRow(["Strategy", ...matrix.strategies]));
+  matrix.sampleSizes.forEach((row, index) => {
+    lines.push(
+      toCsvRow([
+        matrix.strategies[index],
+        ...row.map((value) => String(value)),
       ])
     );
   });
@@ -691,4 +861,40 @@ function buildCorrelationCsvLines(
   return lines;
 }
 
+interface AnalyticsContextArgs {
+  method: CorrelationMethod;
+  alignment: CorrelationAlignment;
+  normalization: CorrelationNormalization;
+  dateBasis: CorrelationDateBasis;
+  minSamples: number;
+}
 
+function formatAnalyticsContext({
+  method,
+  alignment,
+  normalization,
+  dateBasis,
+  minSamples,
+}: AnalyticsContextArgs): string {
+  const methodLabel =
+    method === "pearson"
+      ? "Pearson"
+      : method === "spearman"
+      ? "Spearman"
+      : "Kendall";
+
+  const alignmentLabel = alignment === "shared" ? "Shared days" : "Zero-filled";
+
+  const normalizationLabel =
+    normalization === "raw"
+      ? "Raw P/L"
+      : normalization === "margin"
+      ? "Margin-normalized"
+      : "1-lot normalized";
+
+  const dateLabel = dateBasis === "opened" ? "Opened dates" : "Closed dates";
+
+  const minSamplesLabel = `n≥${minSamples}`;
+
+  return [methodLabel, alignmentLabel, normalizationLabel, dateLabel, minSamplesLabel].join(", ");
+}

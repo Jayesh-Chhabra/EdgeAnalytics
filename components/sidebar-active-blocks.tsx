@@ -1,14 +1,7 @@
 "use client";
 
-import {
-  IconArrowsShuffle,
-  IconCheck,
-  IconFileSpreadsheet,
-  IconRefresh,
-} from "@tabler/icons-react";
+import { IconArrowsShuffle, IconCheck, IconFileSpreadsheet, IconRefresh } from "@tabler/icons-react";
 import { useState } from "react";
-
-import { useIsMobile } from "@/hooks/use-mobile";
 
 import { BlockSwitchDialog } from "@/components/block-switch-dialog";
 import { Button } from "@/components/ui/button";
@@ -21,57 +14,14 @@ import { type Block, isTradeBasedBlock, isEquityCurveBlock } from "@/lib/stores/
 
 export function SidebarActiveBlocks({ activeBlock }: { activeBlock: Block }) {
   const [isSwitchDialogOpen, setIsSwitchDialogOpen] = useState(false);
-  const isMobile = useIsMobile();
 
-  const formatDate = (date: Date) => {
-    const now = new Date();
-    const diffInDays = Math.floor(
-      (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
-    if (diffInDays === 0) return "today";
-    if (diffInDays === 1) return "yesterday";
-    if (diffInDays < 7) return `${diffInDays} days ago`;
-
-    return new Intl.DateTimeFormat("en-US", {
+  const formatDate = (date: Date) =>
+    new Intl.DateTimeFormat("en-US", {
       month: "short",
       day: "numeric",
-      year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+      year: "numeric",
     }).format(date);
-  };
 
-  // Mobile compact version - just block name and switch button
-  if (isMobile) {
-    return (
-      <SidebarGroup className="group-data-[collapsible=icon]:hidden border-t border-sidebar-border/60">
-        <SidebarGroupContent className="px-2 py-2">
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-sidebar-accent/40 px-2.5 py-2">
-            <div className="flex min-w-0 flex-1 items-center gap-1.5">
-              <IconCheck className="size-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
-              <p className="truncate text-xs font-semibold text-sidebar-foreground">
-                {activeBlock.name}
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 shrink-0 gap-1 px-1.5 text-[0.65rem]"
-              onClick={() => setIsSwitchDialogOpen(true)}
-            >
-              <IconArrowsShuffle className="size-3" />
-            </Button>
-          </div>
-        </SidebarGroupContent>
-
-        <BlockSwitchDialog
-          open={isSwitchDialogOpen}
-          onOpenChange={setIsSwitchDialogOpen}
-        />
-      </SidebarGroup>
-    );
-  }
-
-  // Desktop full version
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden border-t border-sidebar-border/60">
       <SidebarGroupLabel>Active Block</SidebarGroupLabel>
